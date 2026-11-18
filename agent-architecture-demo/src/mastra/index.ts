@@ -11,7 +11,7 @@ import path from 'node:path';
 import { deployHistorian, logAnalyst, triageAgent } from './incident-desk/agents/specialists';
 import { incidentCommander, incidentInvestigator } from './incident-desk/agents/supervisors';
 import { incidentTriage } from './incident-desk/workflows/incident-triage';
-import { evidenceGrounded } from './incident-desk/scorers';
+import { answerJudged, customerDataKept, evidenceGrounded, rootCauseFound } from './incident-desk/scorers';
 import { deskRoutes } from './incident-desk/routes';
 import { plannerAgents } from './planner/agents';
 import { plannerRoutes } from './planner/routes';
@@ -43,7 +43,7 @@ export const mastra = new Mastra({
     ...plannerAgents,
   },
   workflows: { incidentTriage },
-  scorers: { evidenceGrounded },
+  scorers: { evidenceGrounded, rootCauseFound, customerDataKept, answerJudged },
   storage: await createStorage(root),
   observability: new Observability({
     configs: {

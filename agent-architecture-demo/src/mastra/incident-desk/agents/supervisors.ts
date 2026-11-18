@@ -6,6 +6,8 @@ import { Memory } from '@mastra/memory';
 import { z } from 'zod';
 import { model } from '../../model/models';
 import { buildTools, pick } from '../tools';
+import { demoMode } from '../../model/models';
+import { answerJudged, customerDataKept, rootCauseFound } from '../scorers';
 import { delegationPolicy } from './delegation';
 import { deployHistorian, logAnalyst } from './specialists';
 
@@ -36,6 +38,8 @@ export const incidentInvestigator = new Agent({
   model: model('incident-investigator', 'large'),
   agents: { logAnalyst, deployHistorian },
   memory: new Memory(),
+  // behaviour, sampled on every run: did it find the real cause? (results in Studio, Scorers)
+  scorers: { rootCauseFound: { scorer: rootCauseFound, sampling: { type: 'ratio', rate: 1 } } },
   defaultOptions: { maxSteps: 6, delegation: delegationPolicy },
 });
 
@@ -53,5 +57,11 @@ Runbook RB-07: never restart checkout because of payment problems.`,
   agents: { logAnalyst, deployHistorian },
   tools: { ...pick(gated, 'rollbackDeploy', 'restartService', 'postStatusUpdate', 'searchRunbooks') },
   memory: new Memory(),
+  // behaviour, sampled on every run: does the chat answer repeat the customer's data? (results in Studio, Scorers)
+  scorers: {
+    customerDataKept: { scorer: customerDataKept, sampling: { type: 'ratio', rate: 1 } },
+    // LLM as judge: live only, the scripted mock model cannot judge
+    answerJudged: { scorer: answerJudged, sampling: demoMode() === 'live' ? { type: 'ratio', rate: 1 } : { type: 'none' } },
+  },
   defaultOptions: { maxSteps: 8, delegation: delegationPolicy },
 });

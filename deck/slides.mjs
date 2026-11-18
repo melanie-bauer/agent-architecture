@@ -470,7 +470,7 @@ ${svg(96, 270, 1408, 480, (() => {
 MCP, the Model Context Protocol, connects an agent to tools and data. Anthropic published it at the end of 2024.
 A2A, the Agent2Agent protocol, connects an agent to another agent it does not control. Google started it in April 2025, it's now a Linux Foundation project, and version 1.0 is out.
 AG-UI, the Agent User Interaction protocol, connects the agent system to the user interface: streaming text, tool calls, state and approvals. It comes from CopilotKit.
-We'll meet A2A in chapter one, MCP in chapter three and AG-UI in chapter four. If you're on .NET: Microsoft Agent Framework supports all three.
+We'll meet A2A in chapter one, MCP in chapter three and AG-UI in chapter four. MCP stays on the slides: my demos use local tools, because what matters is which agent gets which tool, not the wire. If you're on .NET: Microsoft Agent Framework supports all three.
 That's enough basics. Chapter one.`,
   },
 
@@ -559,11 +559,11 @@ So here are the reasons to split.`,
     <div class="card" style="--c:${C.green}">${rd('coins', C.green, 70)}<h3>Cost</h3><p class="k">needs a different model</p><p class="ex">small model for reading, large one for planning</p></div>
     <div class="card" style="--c:${C.purple}">${rd('clock', C.purple, 70)}<h3>Clock</h3><p class="k">runs at a different time</p><p class="ex">in parallel, or for hours</p></div>
   </div>
-  <div class="callout">${rd('drama', C.red, 60)}<p><b>Not on the list: a different persona.</b> Two agents that differ only in their system prompt are one agent in two costumes.</p></div>
+  <div class="callout" style="background:#e3ecfc">${rd('users', C.blue, 60)}<p style="color:#12213a"><b>Also a reason: who owns it.</b> One team builds its agent in Python, the other in C#, each with its own releases. Then they are two agents, connected over A2A.</p></div>
 </div>`,
     notes: `When one agent no longer passes your evals, because the context gets too big, the permissions clash or the costs explode, you split, and then along one of these four lines. It's my rule, not a law of nature, but it has held up well for me.
 Context: they need different data, or simply less. In our conference, travel sees passports, and nobody else should. Capabilities: they may do different things. The agent that reads untrusted input should not hold the delete button. Cost: they need a different model. Clock: they run in parallel, or for hours. Waiting for a human is no reason for a second agent, though. That's a workflow that pauses, chapter two.
-What's not on the list: a different persona. If two agents differ only in their system prompt, they're one agent in two costumes.
+And one reason that isn't technical: who owns it. If another team builds its agent in Python and you build yours in C#, with their own releases and their own on-call, then those are two agents. You connect them over A2A, you don't merge their prompts. Conway's law applies to agents too.
 So say you have a real reason to split. Which shape should the team have?`,
   },
   {
@@ -778,7 +778,7 @@ So much for shapes. Does any of this pay off?`,
   <div class="ev ev3">
     <div style="--c:${C.blue}"><h3>Google Research, MIT</h3>
       <p class="big"><span style="color:${C.green}">+81 %</span> when the work splits into parallel parts</p>
-      <p class="big"><span style="color:${C.orange}">−70 %</span> when each step needs the one before</p>
+      <p class="big"><span style="color:${C.orange}">up to −70 %</span> when each step needs the one before</p>
       <p>Above about 45 % single-agent accuracy, more agents hurt.</p></div>
     <div style="--c:${C.purple}"><h3>Stanford</h3>
       <p>Same thinking budget for one agent and a team: <b>one agent is as good or better.</b></p>
@@ -790,7 +790,7 @@ So much for shapes. Does any of this pay off?`,
   </div>
 </div>`,
     notes: `The biggest study is from Google Research, MIT and others, updated this April: 260 configurations, six agent benchmarks, one single agent against four team architectures, with models from OpenAI, Google and Anthropic.
-On a task that splits into parallel parts, financial analysis, a centralized team was 81 % better than one agent. On a task where each step depends on the one before, planning in a game world, every team variant was worse, by up to 70 %. And once one agent already reaches about 45 % accuracy, more agents tend to hurt. Without a supervisor that checks, errors were amplified 17 times, with one about 4 times.
+On a task that splits into parallel parts, financial analysis, a centralized team was 81 % better than one agent. On a task where each step depends on the one before, planning in a game world, every team variant was worse, by up to 70 %. And once one agent already reaches about 45 % accuracy, more agents tend to hurt. And errors grow: without a supervisor that checks, up to 17 times; with one, about 4 times.
 Stanford, April: give one agent and a team the same thinking budget, and the single agent is as good or better on multi-hop questions. A lot of what we credit to teams is just more compute.
 Anthropic, January: start with one agent. Teams help with polluted context, parallel work and specialisation, and cost three to ten times the tokens.
 That's the four C's again. And it's why my default is one agent until it fails your evals.`,
@@ -894,13 +894,13 @@ And in a network that raises a question: who may remember what?`,
     html: `<div class="content v">
   <h2>Who may remember what?</h2>
   <div class="mid">${stops([
-    [C.purple, 'Specialists start with an empty thread', 'they get the delegation prompt, not the whole conversation'],
+    [C.purple, 'Specialists start with an empty thread', 'they get the prompt, plus the parent’s conversation unless you filter it'],
     [C.blue, 'Save results, not transcripts', 'structured findings and decisions, in working memory'],
     [C.amber, 'Shared memory is shared state', 'the same risks as a blackboard: conflicting writes, stale reads'],
     [C.red, 'Personal data stays where it is needed', 'what one agent remembers can leak into another agent’s context'],
   ], 'margin-top:0')}</div>
 </div>`,
-    notes: `In Mastra, every delegation starts the specialist with a new, empty thread. It gets the delegation prompt, and only the prompt and the answer are saved. That's a good default.
+    notes: `In Mastra, every delegation starts the specialist with a new, empty thread, and only the prompt and the answer are saved. That's a good default. But careful: by default the specialist also gets the supervisor's conversation as context. If you don't want that, you filter it. That's what the message filter in chapter three is for.
 Save results, not transcripts: decisions and structured findings go into working memory, not the whole chat.
 Shared memory is shared state, with the same risks as a blackboard.
 And personal data stays where it's needed. If the travel agent remembers passport numbers, they must not end up in the budget agent's context.
@@ -955,7 +955,8 @@ Read tools sound harmless. They aren't.`,
 ${svg(96, 330, 1408, 320, injectionMap())}`,
     notes: `Everything a tool returns goes into the context, and the model can't reliably tell data from instructions. A talk abstract, a support mail, a log line can say "ignore all previous instructions". That's prompt injection.
 You won't filter it away reliably. So limit what it can reach: the agent that reads untrusted text holds only read tools. It hands over findings in fixed fields, not free text. The agent with write tools never sees the original text, and its writes still need approval.
-That's the Capabilities C in practice. The incident desk has exactly this case: a log line with an injection in it. And findings in fixed fields is already a rule for handoffs.`,
+That's the Capabilities C in practice. The incident desk has exactly this case: a log line with an injection in it. And findings in fixed fields is already a rule for handoffs.
+In the demo you'll see both sides on purpose: the workflow follows this rule. The chat commander doesn't: it reads the ticket and holds write tools, so there the approval is the last line of defence. That's the compromise a chat makes.`,
   },
   {
     title: 'Handoffs',
@@ -1060,7 +1061,7 @@ The abstract promised you design, test and debug. So the last part: how do you s
 </div>
 ${svg(96, 330, 1408, 440, traceMap())}`,
     notes: `Observability for agents means tracing. Every run becomes a tree of spans: each model call, each tool call, each delegation or A2A call, each approval, with input, output, tokens and time.
-This is a decentralized run from the conference planner. You'll see it live at the end. Venue puts the Agents track into Room C and posts the venue cost, 44,200 euros. Then venue asks accessibility, and Room C turns out not to be step-free. Meanwhile the budget peer reads the board, and it reads 44,200, the old value. Venue drops Room C later, and the real cost is 38,600. Without the trace you'd only see a wrong total.
+This is a decentralized run from the conference planner. Venue assigns the rooms and posts the cost, venue asks accessibility, budget reads the board, venue drops a room. Every step is a span you can open. And there's a bug hiding in this tree. Don't hunt for it yet: we'll find it live at the end, in the real trace.
 In Mastra the traces show up in Studio. With OpenTelemetry you can send them to any tool you already use, and Microsoft Agent Framework emits OpenTelemetry too.
 So how do you get from a trace to a fix?`,
   },
@@ -1078,7 +1079,7 @@ So how do you get from a trace to a fix?`,
   </div></div>
 </div>`,
     notes: `I ask the trace four questions. Who saw what: what was in the context of the call that went wrong? Which tools were offered? Why did it delegate, and to whom? And how did it stop: done, budget, limit, or error?
-Then find the first wrong span. Not the last one, the first. Replay the run, with the recorded model responses or a scripted model, so you can reproduce it without paying for it or getting a different answer. Fix the boundary, not the prompt: a filter, a tool set, a limit, an order of steps. In the stale read: budget may only check a confirmed plan. And add a test so it stays fixed.
+Then find the first wrong span. Not the last one, the first. Replay the run, with the recorded model responses or a scripted model, so you can reproduce it without paying for it or getting a different answer. Fix the boundary, not the prompt: a filter, a tool set, a limit, an order of steps. You'll see one of those fixes at the end, for the bug in that tree. And add a test so it stays fixed.
 Which leads to testing.`,
   },
   {
@@ -1090,15 +1091,15 @@ Which leads to testing.`,
   <div class="mid"><div class="ev">
     <div style="--c:${C.teal}"><h3>Architecture tests</h3>
       <p>Who can call which tool? Is every risky tool gated? Does customer data reach a specialist?</p>
-      <p class="how">Scripted model, every commit.</p></div>
+      <p class="how">Scripted model, offline, fast enough for every commit.</p></div>
     <div style="--c:${C.purple}"><h3>Behavioural evals</h3>
       <p>Does it find the cause? Does it respect a “no”? Is one agent still reliable enough?</p>
       <p class="how">Real model, many runs, pass rates.</p></div>
   </div></div>
 </div>`,
     notes: `How do you test something non-deterministic? Split the question.
-Architecture tests check the wiring: who can call which tool, is every risky tool gated, does personal data reach an agent that shouldn't see it. You don't need a real model for that. A scripted model is better: deterministic, offline, on every commit. My demo repo runs them on every commit.
-Behavioural evals check what the real model does: does it find the cause, does it respect a no. Run them many times and look at pass rates. And these evals answer the question from chapter one: does one agent still pass?
+Architecture tests check the wiring: who can call which tool, is every risky tool gated, does personal data reach an agent that shouldn't see it. You don't need a real model for that. A scripted model is better: deterministic, offline, fast enough to run on every commit. In my demo repo they run offline in about half a minute.
+Behavioural evals check what the real model does: does it find the cause, does it respect a no. Run them many times and look at pass rates. In Mastra that's a scorer. In my demo, code scorers check what code can check: did it find the real cause, did the answer repeat customer data. And an LLM as judge grades what code can't: is the answer grounded, safe and actionable. Every live run gets scored, and the scores sit in Studio next to the trace. And these evals answer the question from chapter one: does one agent still pass?
 None of this needs a specific framework. My demo uses Mastra, a TypeScript framework, because it has workflows, supervisors, memory, tracing and a local Studio in one package. Microsoft Agent Framework has the same building blocks for .NET: agents as functions, workflows with checkpoints, approval-required functions, OpenTelemetry, A2A and AG-UI hosting.
 That's the theory. Now all of it in one example: the conference planner.`,
   },
@@ -1142,7 +1143,8 @@ Three parts. First, the same small question in three architectures. It touches t
     notes: `Let's put it together. [Compare runs tab: numbers from the runs you just saw, one run each, not a benchmark.]
 For the room question the single agent was fastest and complete. Centralized ran three specialists in parallel, but the Room C problem had to travel through the supervisor. Decentralized: venue asked accessibility directly, but budget read the board before venue had updated it. The blackboard weakness, found in the trace.
 For travel the picture turns. In the network only the travel agent ever saw a passport number, and the booking waited for a person. The single agent had to hold all of it.
-So the network helped where the data was really separate. It cost wherever the agents needed each other. Which is exactly what the research said.
+So the network helped where the data was really separate. It cost wherever the agents needed each other. That's one run each, an illustration, not a benchmark. But it matches what the research said.
+And a fair objection on travel: a single agent with a passport tool that never returns the numbers would protect them too. Good tool design gets you far. The network makes the boundary structural: the data never leaves the agent that owns it.
 And the incident desk showed the other half: whatever the shape, the boundaries decide. Who sees what, who may do what, and who decides.`,
   },
   {
@@ -1170,8 +1172,10 @@ A prompt asks. A boundary decides.`,
     route: 8,
     time: '43:00',
     html: `<div class="content">
+  <p class="punch" style="font-size:40px;margin:0 0 28px">A prompt asks. A boundary decides.</p>
   <h1 class="title">Thank you.</h1>
   <p class="subtitle">Questions?</p>
+  <p style="margin-top:36px;font:600 28px var(--mono, monospace)">github.com/melanie-bauer/agent-architecture</p>
 </div>
 ${svg(1000, 330, 560, 380, (() => {
   let b = line([[0, 300], [200, 300], [280, 220], [560, 220]], C.red, { w: 16 });
@@ -1184,7 +1188,8 @@ ${svg(1000, 330, 560, 380, (() => {
 })())}
 <p class="who">Melanie Bauer<span>software architects</span></p>`,
     notes: `Thank you! The demo runs offline without an API key, so you can try it on the train home. Questions?
-[TODO before the talk: add the repo link and LinkedIn to this slide if you want them on screen.]`,
+The repo is on screen: github.com/melanie-bauer/agent-architecture.
+[TODO before the talk: add LinkedIn to this slide if you want it on screen.]`,
   },
   {
     title: 'Sources',

@@ -39,6 +39,16 @@ export const PRICES: Record<string, [number, number]> = {
 
 let openai: ReturnType<typeof createOpenAI> | undefined;
 
+/**
+ * The model behind LLM-as-judge scorers. Live only (the scripted mock model cannot judge), and deliberately
+ * not wrapped by `recorded()`: the judge is not part of the agent system, so it must not show up in the Desk timeline,
+ * token counts or PII checks. MODEL_JUDGE overrides it, by default the large model.
+ */
+export function judgeModel() {
+  openai ??= createOpenAI();
+  return openai(process.env.MODEL_JUDGE ?? MODEL_IDS.large);
+}
+
 export function model(agentId: string, size: Size) {
   const mode = nodeOf(agentId) ? plannerMode() : demoMode();
   if (mode === 'mock') {

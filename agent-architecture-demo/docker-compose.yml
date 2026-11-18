@@ -17,6 +17,7 @@ services:
         required: false
     environment:
       MOCK_LATENCY_MS: ${MOCK_LATENCY_MS:-600}
+      DEMO_MODE: ${DEMO_MODE:-} # mock forces everything offline, even with a key in .env
       PLANNER_MODE: ${PLANNER_MODE:-}
       PLANNER_REASONING_EFFORT: ${PLANNER_REASONING_EFFORT:-}
       PLANNER_SYSTEM_LATENCY: ${PLANNER_SYSTEM_LATENCY:-}
