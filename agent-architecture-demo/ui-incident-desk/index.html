@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Incident Desk</title>
+<script>
+  // theme before first paint: light by default, dark only if chosen earlier
+  try { if (localStorage.getItem('desk-theme') === 'dark') document.documentElement.dataset.theme = 'dark'; } catch {}
+</script>
+<style>
+  @font-face { font-family: "Overpass"; src: url("/desk/fonts/overpass-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+  @font-face { font-family: "Overpass"; src: url("/desk/fonts/overpass-latin-600-normal.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+  @font-face { font-family: "Overpass"; src: url("/desk/fonts/overpass-latin-800-normal.woff2") format("woff2"); font-weight: 800; font-display: swap; }
+  @font-face { font-family: "Overpass Mono"; src: url("/desk/fonts/overpass-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+
+  /* ================= tokens (shared with the deck and the planner) ================= */
+  :root {
+    --ground: #f4f7fb; --surface: #ffffff; --panel: #e9eef5; --line: #d5dce6;
+    --ink: #12213a; --ink-2: #55627a; --on-ink: #ffffff;
+    --agui: #2f6fde; --agui-text: #2558b8; --agui-tint: #e3ecfc;
+    --tool: #12a594; --tool-text: #0b7468; --tool-tint: #dcf3ef;
+    --human: #f0a33a; --human-text: #8f5a0b; --human-tint: #fdf0dc;
+    --ok: #1f7343; --ok-line: #2e9e5b; --ok-tint: #def2e5;
+    --problem: #b8322a; --problem-tint: #fbe4e1;
+    --a-commander: #12213a; --a-commander-text: #12213a;
+    --a-log: #7a5ad8; --a-log-text: #5f3fbf; --a-log-tint: #ece6fa;
+    --a-deploy: #d64f8f; --a-deploy-text: #a8336a; --a-deploy-tint: #f9e2ed;
+    --sans: "Overpass", system-ui, sans-serif;
+    --mono: "Overpass Mono", ui-monospace, monospace;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --radius: 12px;
+    --rail: 320px; --events: 460px;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f1828; --surface: #172338; --panel: #1e2c44; --line: #2c3d58;
+    --ink: #e8eef6; --ink-2: #a3b1c6; --on-ink: #0f1828;
+    --agui-text: #8fb3f5; --agui-tint: #1d3155;
+    --tool-text: #5fd3c4; --tool-tint: #123b3a;
+    --human-text: #f5c27a; --human-tint: #3b2c12;
+    --ok: #7fd3a1; --ok-tint: #173a27;
+    --problem: #f2918a; --problem-tint: #44201e;
+    --a-commander: #e8eef6; --a-commander-text: #e8eef6;
+    --a-log-text: #b6a3f2; --a-log-tint: #2c2450;
+    --a-deploy-text: #f0a0c6; --a-deploy-tint: #46203a;
+    color-scheme: dark;
+  }
+  @media (max-width: 1440px) { :root { --rail: 280px; --events: 400px; } }
+
+  /* ================= base ================= */
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--ground); color: var(--ink); font: 400 16px/1.5 var(--sans); display: grid; grid-template-rows: 64px minmax(0, 1fr); -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--agui-tint); color: var(--ink); }
+  :focus-visible { outline: 3px solid var(--agui); outline-offset: 2px; border-radius: 6px; }
+  * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  code, .mono { font-family: var(--mono); font-variant-ligatures: none; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  button { font: 600 16px/1 var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: border-color .2s var(--ease), background-color .2s var(--ease); }
+  button:hover:not(:disabled) { border-color: var(--ink-2); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  button.primary { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+  button.primary:hover:not(:disabled) { background: var(--agui-text); border-color: var(--agui-text); }
+
+  /* ================= top bar ================= */
+  header.top { display: flex; align-items: center; gap: 14px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--line); min-width: 0; }
+  header.top h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; white-space: nowrap; }
+  .badge { font-size: 14px; font-weight: 600; padding: 5px 10px; border-radius: 99px; background: var(--panel); color: var(--ink-2); white-space: nowrap; }
+  .badge.mock { background: var(--human-tint); color: var(--human-text); }
+  .badge.live { background: var(--tool-tint); color: var(--tool-text); }
+  .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; white-space: nowrap; }
+  .status .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-2); }
+  .status[data-state="running"] { color: var(--agui-text); } .status[data-state="running"] .dot { background: var(--agui); animation: pulse 1.2s var(--ease) infinite; }
+  .status[data-state="waiting"] { color: var(--human-text); } .status[data-state="waiting"] .dot { background: var(--human); }
+  .status[data-state="error"] { color: var(--problem); } .status[data-state="error"] .dot { background: var(--problem); }
+  .usage { margin-left: auto; color: var(--ink-2); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
+
+  /* ================= three columns ================= */
+  .view.cols { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr) var(--events); min-height: 0; }
+  .col { min-height: 0; overflow-y: auto; }
+  .rail { background: var(--surface); border-right: 1px solid var(--line); padding: 20px 20px 24px; }
+  .rail h2, .pane-head h2 { font-size: 20px; font-weight: 800; }
+
+  /* ---- steps: stations on one line ---- */
+  ol.steps { list-style: none; margin: 14px 0 28px; padding: 0; position: relative; }
+  ol.steps::before { content: ""; position: absolute; left: 13px; top: 14px; bottom: 30px; width: 4px; border-radius: 2px; background: var(--line); }
+  .step { position: relative; padding: 0 0 20px 44px; }
+  .station { position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--surface); border: 4px solid var(--line); display: grid; place-items: center; font: 800 14px/1 var(--sans); color: var(--ink-2); }
+  .station svg.i { width: 16px; height: 16px; stroke-width: 3; }
+  .step h3 { font-size: 22px; font-weight: 800; line-height: 30px; letter-spacing: -0.01em; }
+  .step .sends { font-size: 14px; color: var(--ink-2); margin: 2px 0 6px; overflow-wrap: anywhere; }
+  .step .sends q { color: var(--ink); font-family: var(--mono); font-size: 14px; quotes: "\201C" "\201D"; }
+  .step p { margin: 0 0 6px; }
+  .step .watch { color: var(--ink-2); }
+  .step .watch b { color: var(--ink); font-weight: 600; }
+  .step .proof { display: block; margin: 8px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--ok-tint); color: var(--ok); font-weight: 600; }
+  .step .proof.warn { background: var(--human-tint); color: var(--human-text); }
+  .step .proof.bad { background: var(--problem-tint); color: var(--problem); }
+  .step button { margin-top: 8px; }
+  .step[data-state="next"] .station { border-color: var(--ink); color: var(--ink); }
+  .step[data-state="running"] .station { border-color: var(--agui); background: var(--agui); color: #fff; animation: pulse 1.2s var(--ease) infinite; }
+  .step[data-state="waiting"] .station { border-color: var(--human); background: var(--human); color: #2a1a00; }
+  .step[data-state="done"] .station { border-color: var(--ok-line); background: var(--ok-line); color: #fff; }
+  .step .proof:empty { display: none; }
+  .step[data-state="todo"] h3, .step[data-state="done"] h3 { color: var(--ink-2); }
+  .step:not([data-state="next"]):not([data-state="running"]):not([data-state="waiting"]) .watch { display: none; }
+  .step[data-state="done"] > p:not(.proof), .step[data-state="done"] .sends { display: none; }
+  .step[data-state="done"] button { display: none; }
+
+  /* ---- roster ---- */
+  .roster-note { color: var(--ink-2); margin: 6px 0 12px; }
+  .agent-row { margin: 0 0 14px; }
+  .agent-name { display: flex; align-items: center; gap: 8px; font-weight: 800; margin-bottom: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: baseline; gap: 6px; font-size: 14px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--tool); color: var(--tool-text); background: var(--surface); }
+  .chip code { font-size: 14px; color: var(--ink); }
+  .chip.write { border-color: var(--human); background: var(--human-tint); color: var(--human-text); }
+  .pin { width: 12px; height: 12px; border-radius: 50%; border: 3px solid var(--c, var(--ink)); background: var(--surface); flex: none; }
+  .a-commander { --c: var(--a-commander); --ct: var(--a-commander-text); --tint: var(--panel); }
+  .a-logAnalyst { --c: var(--a-log); --ct: var(--a-log-text); --tint: var(--a-log-tint); }
+  .a-deployHistorian { --c: var(--a-deploy); --ct: var(--a-deploy-text); --tint: var(--a-deploy-tint); }
+  .a-investigator { --c: var(--a-commander); --ct: var(--a-commander-text); --tint: var(--panel); }
+
+  /* ================= conversation ================= */
+  .convo { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+  .pane-head { display: flex; align-items: baseline; gap: 12px; padding: 16px 24px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .pane-head .meta { color: var(--ink-2); font-size: 14px; }
+  #chat { overflow-y: auto; padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 14px; }
+  #chat > * { flex-shrink: 0; }
+  .msg, .answer, .compare .box, details.res pre { font-variant-ligatures: none; }
+  .empty { margin: auto; max-width: 46ch; text-align: center; color: var(--ink-2); }
+  .empty b { color: var(--ink); }
+  .msg { max-width: 72ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; background: var(--ink); color: var(--on-ink); padding: 10px 14px; border-radius: 12px 12px 4px 12px; }
+  .msg.assistant { background: var(--surface); border: 1px solid var(--line); padding: 12px 16px; border-radius: 12px; }
+  .who { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ct, var(--ink-2)); margin-bottom: 4px; }
+  .run-mark { display: flex; align-items: center; gap: 10px; color: var(--agui-text); font-size: 14px; font-weight: 600; }
+  .run-mark::before, .run-mark::after { content: ""; flex: 1; height: 1px; background: var(--agui-tint); }
+  .run-mark.resume { color: var(--agui-text); font-size: 16px; }
+  .error-msg { color: var(--problem); background: var(--problem-tint); padding: 10px 14px; border-radius: 8px; }
+
+  /* ---- delegation card ---- */
+  .deleg { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; max-width: 100%; background-image: linear-gradient(var(--c), var(--c)); background-size: 100% 4px; background-repeat: no-repeat; }
+  .deleg-head { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 800; }
+  .deleg-head .ag { color: var(--ct); }
+  .deleg-state { margin-left: auto; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0 10px; }
+  .compare h4 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+  .compare .box { background: var(--ground); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9.5em; overflow-y: auto; }
+  .compare .waiting { color: var(--ink-2); font-style: italic; }
+  mark.pii { background: var(--problem-tint); color: var(--problem); font-weight: 600; border-radius: 3px; padding: 0 2px; }
+  mark.redacted { background: var(--ok-tint); color: var(--ok); font-weight: 600; border-radius: 3px; padding: 0 2px; }
+  .verdict { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ok); margin-bottom: 8px; }
+  .verdict.bad { color: var(--problem); }
+  .offered { font-size: 14px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .calls { display: flex; flex-direction: column; gap: 6px; }
+  .call { font-size: 15px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 6px 10px; border-radius: 8px; background: var(--tool-tint); color: var(--tool-text); }
+  .call code { color: var(--ink); font-size: 14px; }
+  .call .tname { font-weight: 600; font-family: var(--mono); font-size: 14px; color: var(--tool-text); }
+  .call.ran-write { background: var(--human-tint); color: var(--human-text); }
+  .call.ran-write .tname { color: var(--human-text); }
+  details.res summary { cursor: pointer; font-size: 14px; color: var(--ink-2); }
+  details.res pre { margin: 6px 0 0; max-height: 200px; overflow: auto; font: 14px/1.4 var(--mono); white-space: pre-wrap; color: var(--ink); }
+  .answer { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .answer .who { margin-bottom: 2px; }
+
+  /* ---- approval card ---- */
+  .approval { position: sticky; bottom: 0; z-index: 2; background: var(--surface); border: 2px solid var(--human); border-radius: 14px; overflow: hidden; box-shadow: 0 -8px 24px rgba(0, 0, 0, .12); scroll-margin-bottom: 24px; }
+  .approval-top { display: flex; align-items: center; gap: 10px; background: var(--human-tint); color: var(--human-text); padding: 10px 18px; font-weight: 800; font-size: 18px; }
+  .approval-top .tier { margin-left: auto; font-size: 14px; font-weight: 600; }
+  .approval-body { padding: 14px 18px 16px; display: grid; gap: 12px; }
+  .approval-ask { font-size: 28px; font-weight: 800; letter-spacing: -0.015em; line-height: 1.2; }
+  .approval-tool { color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+  table.args { border-collapse: collapse; width: 100%; font-size: 16px; }
+  table.args th { text-align: left; font-weight: 600; color: var(--ink-2); padding: 6px 12px 6px 0; width: 1%; white-space: nowrap; vertical-align: top; font-family: var(--mono); font-size: 14px; }
+  table.args td { padding: 6px 0; font-family: var(--mono); font-size: 16px; overflow-wrap: anywhere; }
+  table.args tr + tr { border-top: 1px solid var(--line); }
+  .state-box { display: flex; gap: 10px; align-items: flex-start; background: var(--agui-tint); color: var(--agui-text); border-radius: 8px; padding: 10px 12px; }
+  .state-box b { color: var(--ink); }
+  .state-box code { font-size: 14px; color: var(--ink); }
+  .decide { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: end; }
+  .decide label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+  .decide input { font: 16px var(--sans); color: var(--ink); background: var(--ground); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; caret-color: var(--human); }
+  .decide input:focus { border-color: var(--human); outline: none; box-shadow: 0 0 0 3px var(--human-tint); }
+  button.approve { background: var(--ok); border-color: var(--ok); color: #fff; padding: 12px 20px; font-size: 18px; }
+  button.approve:hover:not(:disabled) { background: #185c36; border-color: #185c36; }
+  button.decline { color: var(--problem); border: 2px solid var(--problem); padding: 11px 18px; font-size: 18px; }
+  :root[data-theme="dark"] button.approve { color: #0f1828; }
+  .approval.answered { position: static; border-width: 1px; border-color: var(--line); box-shadow: none; }
+  .approval.answered .approval-body { display: none; }
+  .approval.answered .approval-top { background: var(--surface); color: var(--ink); font-size: 16px; font-weight: 600; }
+
+  /* ---- composer ---- */
+  .composer { display: flex; gap: 10px; padding: 12px 24px 16px; border-top: 1px solid var(--line); background: var(--surface); }
+  .composer textarea { flex: 1; font: 16px/1.4 var(--sans); color: var(--ink); background: var(--ground); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; resize: none; height: 46px; caret-color: var(--agui); }
+  .composer textarea::placeholder { color: var(--ink-2); }
+  .composer textarea:focus { border-color: var(--agui); outline: none; box-shadow: 0 0 0 3px var(--agui-tint); }
+
+  /* ================= AG-UI panel ================= */
+  .events { background: var(--surface); border-left: 1px solid var(--line); display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  .events .pane-head { display: grid; gap: 8px; padding: 16px 20px 12px; }
+  .events .pane-head h2 { display: flex; align-items: center; gap: 8px; }
+  .events .pane-head h2 .bar, .events-toggle .bar { width: 22px; height: 4px; border-radius: 2px; background: var(--agui); }
+  .events .what { margin: 0; color: var(--ink-2); }
+  .seg { display: inline-flex; background: var(--panel); border-radius: 10px; padding: 3px; gap: 2px; justify-self: start; }
+  .seg button { border: 0; background: transparent; padding: 7px 14px; font-size: 15px; color: var(--ink-2); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
+  .seg .count { font-variant-numeric: tabular-nums; font-weight: 400; }
+  #timeline, #raw, .tl, .rawbox { overflow-y: auto; padding: 12px 20px 20px; }
+  .tl-empty { color: var(--ink-2); }
+  .run { margin-bottom: 18px; }
+  .run-head { display: flex; align-items: baseline; gap: 8px; padding-bottom: 6px; border-bottom: 2px solid var(--agui); margin-bottom: 8px; }
+  .run-head b { font-size: 16px; font-weight: 800; }
+  .run-head .rs { margin-left: auto; font-size: 14px; font-weight: 600; color: var(--agui-text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .run-head .rs.waiting { color: var(--human-text); }
+  .run-head .rs.error { color: var(--problem); }
+  .seg-agent { position: relative; padding-left: 22px; margin: 6px 0 10px; }
+  .seg-agent::before { content: ""; position: absolute; left: 5px; top: 22px; bottom: 4px; width: 3px; border-radius: 2px; background: var(--c); opacity: .5; }
+  .seg-agent > .who { margin-left: -22px; margin-bottom: 2px; color: var(--ct); }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; padding: 4px 0; }
+  .row .s { overflow-wrap: anywhere; }
+  .row .t { font: 14px/1.3 var(--mono); color: var(--agui-text); background: var(--agui-tint); padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+  .row.key .s { font-weight: 600; }
+  .row.waiting .s { color: var(--human-text); font-weight: 600; }
+  .row.redact .s { color: var(--ok); font-weight: 600; }
+  .row.bad .s { color: var(--problem); font-weight: 600; }
+  .raw-bar { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); margin-bottom: 8px; }
+  .raw-bar input { accent-color: var(--agui); width: 16px; height: 16px; }
+  .ev { border-bottom: 1px solid var(--line); }
+  .ev summary { cursor: pointer; display: flex; gap: 10px; padding: 4px 0; font: 14px/1.4 var(--mono); }
+  .ev summary .ty { font-weight: 600; color: var(--agui-text); }
+  .ev summary .hint { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev pre { margin: 0 0 8px; font: 14px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
+  #raw:not(.show-deltas) .ev.delta { display: none; }
+  [hidden] { display: none !important; }
+
+  /* ================= tabs ================= */
+  .tabs { display: inline-flex; background: var(--panel); border-radius: 10px; padding: 3px; gap: 2px; }
+  .tabs button { border: 0; background: transparent; padding: 8px 16px; font-size: 16px; color: var(--ink-2); }
+  .tabs button[aria-selected="true"] { background: var(--ink); color: var(--on-ink); }
+  .tabs button:hover:not([aria-selected="true"]) { color: var(--ink); }
+  .events-toggle { display: none; }
+
+  /* ================= shared detail pieces (workflow tab) ================= */
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+  .fact { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px; border-radius: 6px; background: var(--panel); font-size: 15px; }
+  .fact .k, .k { font-size: 14px; color: var(--ink-2); font-weight: 600; }
+  .fact.ev { font-family: var(--mono); font-size: 14px; background: var(--tool-tint); color: var(--tool-text); }
+  .fact.ev.bad { background: var(--problem-tint); color: var(--problem); }
+  .fact.sev-sev1 b { color: var(--problem); }
+  .fact.sev-sev3 b { color: var(--ok); }
+  .quiet { color: var(--ink-2); margin: 6px 0 0; }
+
+  /* ================= workflow tab ================= */
+  .tickets { display: grid; gap: 12px; margin: 14px 0 28px; }
+  .ticket { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; background: var(--ground); }
+  .ticket h3 { font-size: 20px; font-weight: 800; font-family: var(--mono); letter-spacing: 0; }
+  .ticket p { margin: 4px 0 8px; }
+  .ticket .watch { color: var(--ink-2); }
+  .ticket .watch b { color: var(--ink); font-weight: 600; }
+  ul.kinds { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 12px; }
+  ul.kinds li { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; }
+  .kshape { width: 20px; height: 20px; margin-top: 2px; border: 4px solid var(--ink); background: var(--surface); }
+  .kshape.k-code { border-radius: 4px; }
+  .kshape.k-model { border-radius: 50%; }
+  .kshape.k-person { width: 16px; height: 16px; margin: 4px 0 0 2px; transform: rotate(45deg); border-radius: 2px; border-color: var(--human); }
+
+  .flow { overflow-y: auto; padding: 20px 24px 32px; }
+  ol.fline { list-style: none; margin: 0; padding: 0; position: relative; }
+  ol.fline::before { content: ""; position: absolute; left: 14px; top: 16px; bottom: 16px; width: 4px; border-radius: 2px; background: var(--line); }
+  .fstep { position: relative; padding: 0 0 22px 48px; }
+  .fstep .station { position: absolute; left: 0; top: 2px; width: 32px; height: 32px; background: var(--surface); border: 4px solid var(--line); display: grid; place-items: center; color: #fff; }
+  .fstep .station svg.i { width: 16px; height: 16px; stroke-width: 3; }
+  .fstep[data-kind="code"] .station { border-radius: 7px; }
+  .fstep[data-kind="model"] .station { border-radius: 50%; }
+  .fstep[data-kind="person"] .station { width: 28px; height: 28px; left: 2px; top: 4px; border-radius: 4px; transform: rotate(45deg); }
+  .fstep[data-kind="person"] .station svg { transform: rotate(-45deg); }
+  .fhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-height: 34px; }
+  .fhead h3 { font-size: 22px; font-weight: 800; font-family: var(--mono); letter-spacing: -0.01em; line-height: 34px; }
+  .fhead .kind { font-size: 14px; font-weight: 600; color: var(--ink-2); padding: 2px 8px; border-radius: 99px; background: var(--panel); }
+  .fstep[data-kind="person"] .fhead .kind { background: var(--human-tint); color: var(--human-text); }
+  .fhead .fstate { margin-left: auto; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+  .fdesc { margin: 0 0 6px; color: var(--ink-2); max-width: 70ch; }
+  .detail { display: grid; gap: 10px; }
+  .detail:empty { display: none; }
+  .detail > p { margin: 0; }
+  .fstep.side { margin-left: 32px; }
+  .fstep.side::before { content: ""; position: absolute; left: -18px; top: -6px; width: 34px; height: 26px; border-left: 4px solid var(--line); border-bottom: 4px solid var(--line); border-bottom-left-radius: 14px; }
+  .fstep[data-state="running"] .station { border-color: var(--agui); background: var(--agui); animation: pulse 1.2s var(--ease) infinite; }
+  .fstep[data-state="waiting"] .station { border-color: var(--human); background: var(--human); color: #2a1a00; }
+  .fstep[data-state="done"] .station { border-color: var(--ok-line); background: var(--ok-line); }
+  .fstep[data-state="running"] .fstate { color: var(--agui-text); }
+  .fstep[data-state="waiting"] .fstate { color: var(--human-text); }
+  .fstep[data-state="done"] .fstate { color: var(--ok); }
+  .fstep[data-state="skipped"] { opacity: .45; }
+  .fstep[data-state="skipped"] .station { border-style: dashed; }
+  .fstep[data-state="skipped"] .fdesc { display: none; }
+  .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .lane { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; border: 2px solid var(--line); }
+  .lane code { font-size: 14px; }
+  .lane .to { font-weight: 800; font-family: var(--mono); font-size: 15px; }
+  .lane.taken { border-color: var(--ink); background: var(--surface); }
+  .lane.not-taken { color: var(--ink-2); border-style: dashed; }
+  .findings { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; background: var(--surface); display: grid; gap: 8px; }
+  .findings h4 { margin: 0; font-size: 14px; color: var(--ink-2); }
+  .findings .cause { margin: 0; font-weight: 600; }
+  .findings .proposal { margin: 0; }
+  .approval.inline { position: static; box-shadow: 0 8px 24px rgba(0, 0, 0, .10); }
+  .decision { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .decision.yes { color: var(--ok); }
+  .decision.no { color: var(--problem); }
+  .outcome { padding: 10px 14px; border-radius: 8px; background: var(--panel); font-weight: 600; }
+  .outcome p { margin: 0; }
+  .outcome .quiet { font-weight: 400; }
+  .outcome.ran { background: var(--ok-tint); color: var(--ok); }
+  .outcome.ran .quiet { color: var(--ok); }
+  .flow .error-msg { margin-bottom: 14px; }
+
+  /* ================= visualization tab ================= */
+  /* two maps stacked, each one screen tall; the view scrolls and snaps to each map */
+  .view.viz { display: block; min-height: 0; overflow-y: auto; scroll-snap-type: y proximity; }
+  .viz-section { height: calc(100vh - 64px); height: calc(100dvh - 64px); min-height: 520px; display: grid; grid-template-rows: auto minmax(0, 1fr); scroll-snap-align: start; }
+  .viz-section + .viz-section { border-top: 4px solid var(--line); }
+  .viz-title { margin: 0; font-size: 20px; font-weight: 800; white-space: nowrap; }
+  .viz-title span { margin-left: 6px; font-size: 16px; font-weight: 600; color: var(--ink-2); }
+  .viz-next-map { border: 0; background: none; padding: 0; color: var(--agui-text); text-decoration: underline; text-underline-offset: 3px; }
+  .viz-next-map::after { content: " \2193"; }
+  .viz-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .viz-controls { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .viz-count { min-width: 9ch; text-align: center; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .viz-stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 30%); min-height: 0; }
+  .viz-map { margin: 0; padding: 16px 24px; display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+  .viz-svg { width: 100%; height: 100%; min-height: 0; overflow: visible; }
+  .viz-legend { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; color: var(--ink-2); font-weight: 600; padding-top: 8px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 8px; }
+  .viz-caption { background: var(--surface); border-left: 1px solid var(--line); padding: 28px 28px 32px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .viz-caption h2 { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+  .viz-caption .lead { font-size: 20px; line-height: 1.45; margin: 0; max-width: 40ch; }
+  .viz-caption blockquote { margin: 0; padding: 10px 14px; border-radius: 8px; background: var(--ground); font-size: 16px; overflow-wrap: anywhere; }
+  .data-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: baseline; font-size: 16px; }
+  .warn { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; background: var(--problem-tint); color: var(--problem); font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; }
+  .decider { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; font-size: 15px; font-weight: 800; padding: 5px 12px 5px 8px; border-radius: 99px; background: var(--panel); }
+  .decider.d-person { background: var(--human-tint); color: var(--human-text); }
+  .decider.d-code { background: var(--ink); color: var(--on-ink); }
+  .decider.d-code .kind-icon > * { stroke: var(--on-ink); }
+  .kind-icon { width: 22px; height: 22px; flex: none; overflow: visible; }
+  .kind-icon > * { fill: var(--surface); stroke: var(--ink); stroke-width: 4; }
+  .kind-icon.k-person > * { stroke: var(--human); }
+  .kind-icon.k-end > *, .kind-icon.k-input > * { fill: var(--ink); }
+
+  .viz-svg .edge { fill: none; stroke: var(--line); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; transition: stroke .5s var(--ease), opacity .5s var(--ease); }
+  .viz-svg .edge.traveled { stroke: var(--ink); }
+  .viz-svg .edge.agent-log.traveled { stroke: var(--a-log); }
+  .viz-svg .edge.agent-deploy.traveled { stroke: var(--a-deploy); }
+  .viz-svg .edge.dim, .viz-svg .node.dim { opacity: .3; }
+  .viz-svg .node > rect, .viz-svg .node > circle { fill: var(--surface); stroke: var(--line); stroke-width: 6; transition: fill .4s var(--ease), stroke .4s var(--ease); }
+  .viz-svg .node.visited > rect, .viz-svg .node.visited > circle { stroke: var(--ink); }
+  .viz-svg .node.agent-log.visited > circle { stroke: var(--a-log); }
+  .viz-svg .node.agent-deploy.visited > circle { stroke: var(--a-deploy); }
+  .viz-svg .node.k-person > rect { stroke: var(--human); }
+  .viz-svg .node.k-end > circle { fill: var(--line); stroke: none; }
+  .viz-svg .node.k-input > rect { fill: var(--panel); }
+  .viz-svg .node.k-input.visited > rect { fill: var(--ink); }
+  .viz-svg .node.k-end.visited > circle { fill: var(--ok-line); }
+  .viz-svg.declined .node.k-end.visited > circle { fill: var(--problem); }
+  .viz-svg .node.current > rect, .viz-svg .node.current > circle { stroke-width: 8; }
+  .viz-svg .node.waiting > rect { fill: var(--human); animation: pulse 1.6s var(--ease) infinite; transform-box: fill-box; transform-origin: center; }
+  .viz-svg .node.approved > rect { fill: var(--ok-line); stroke: var(--ok-line); }
+  .viz-svg .node.declined > rect { fill: var(--problem); stroke: var(--problem); }
+  .viz-svg text { text-anchor: middle; fill: var(--ink); font-family: var(--sans); }
+  .viz-svg .label { font: 800 21px var(--mono); }
+  .viz-svg .sub { font-size: 18px; fill: var(--ink-2); }
+  .viz-svg .node.k-end .label { font-family: var(--sans); }
+  .viz-svg .token circle { fill: var(--agui); stroke: var(--surface); stroke-width: 4; }
+  .viz-svg .ping { fill: var(--agui); opacity: 0; }
+
+  /* ================= narrow screens: 1280 px at 150 % zoom is about 850 px wide ================= */
+  @media (max-width: 1200px) {
+    .events-toggle { display: inline-flex; }
+    body[data-tab="viz"] .events-toggle { display: none; }
+    .view.cols { grid-template-columns: var(--rail) minmax(0, 1fr); }
+    .view.cols > .events { position: fixed; z-index: 5; top: 64px; right: 0; bottom: 0; width: min(440px, 92vw); box-shadow: -12px 0 32px rgba(0, 0, 0, .18); transform: translateX(105%); transition: transform .35s var(--ease); }
+    body.events-open .view.cols > .events { transform: none; }
+    .usage { display: none; }
+    .viz-stage { grid-template-columns: minmax(0, 1fr) 300px; }
+    .viz-caption { padding: 20px; }
+  }
+  @media (max-width: 1100px) {
+    /* map at full width, the text below it; the whole view scrolls */
+    .viz-section { height: auto; min-height: 0; }
+    .viz-stage { display: block; }
+    .viz-map { display: block; padding: 8px 12px; }
+    .viz-svg { display: block; height: auto; aspect-ratio: 1290 / 540; }
+    .viz-caption { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  }
+  @media (max-width: 1000px) {
+    :root { --rail: 240px; }
+    header.top { gap: 10px; padding: 0 12px; }
+    header.top h1 { display: none; }
+    #theme span, #reset-label { display: none; }
+    .status { min-width: 0; flex: 1 1 auto; }
+    #status-text { overflow: hidden; text-overflow: ellipsis; }
+    .tabs button { padding: 8px 12px; }
+    .viz-bar { padding: 8px 16px; gap: 8px; }
+    .viz-controls { margin-left: 0; }
+    .compare, .lanes { grid-template-columns: 1fr; }
+    .viz-caption h2 { font-size: 24px; }
+    .viz-caption .lead { font-size: 18px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Incident Desk</h1>
+  <div class="tabs" role="tablist" aria-label="Views">
+    <button type="button" role="tab" id="tab-chat" aria-controls="view-chat" aria-selected="true">Chat</button>
+    <button type="button" role="tab" id="tab-workflow" aria-controls="view-workflow" aria-selected="false" tabindex="-1">Workflow</button>
+    <button type="button" role="tab" id="tab-viz" aria-controls="view-viz" aria-selected="false" tabindex="-1">Visualization</button>
+  </div>
+  <span id="mode" class="badge">Checking mode</span>
+  <span id="status" class="status" data-state="idle" role="status"><span class="dot"></span><span id="status-text">Idle</span></span>
+  <span id="usage" class="usage"></span>
+  <button id="events-toggle" type="button" class="events-toggle"><span class="bar" aria-hidden="true"></span>AG-UI events</button>
+  <button id="reset" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span id="reset-label">New thread</span></button>
+  <button id="theme" type="button" aria-label="Switch theme"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg><span id="theme-label">Dark</span></button>
+</header>
+<main id="view-chat" class="view cols" role="tabpanel" aria-labelledby="tab-chat">
+  <aside class="col rail" aria-label="Demo steps and agents">
+    <h2>Demo steps</h2>
+    <ol class="steps" id="steps">
+      <li class="step" data-step="0" data-state="next">
+        <span class="station">1</span>
+        <h3>Investigate</h3>
+        <div class="sends">Sends ticket <q>INC-4711</q> with a customer's name, email and card.</div>
+        <p>The commander asks logAnalyst and deployHistorian for help.</p>
+        <p class="watch"><b>Watch:</b> what the commander sent next to what each specialist received.</p>
+        <p class="proof" role="status"></p>
+        <button class="primary" type="button" data-prompt='Ticket INC-4711 from support: Customer Jana Novak (jana.novak@example.com, card ending 4242) writes: "Checkout fails with an error page since about 14:05. Order #88123 is stuck." Two more customers report the same. What is going on? Do not change anything yet.'>Investigate</button>
+      </li>
+      <li class="step" data-step="1" data-state="todo">
+        <span class="station">2</span>
+        <h3>Mitigate</h3>
+        <div class="sends">Sends <q>Mitigate it.</q></div>
+        <p>The commander asks to roll back checkout. Only the commander holds write tools, and each one needs your approval.</p>
+        <p class="watch"><b>Watch:</b> the run ends and the request waits as state. Decline once with a reason, run this step again, then approve.</p>
+        <p class="proof" role="status"></p>
+        <button class="primary" type="button" data-prompt="Mitigate it.">Mitigate</button>
+      </li>
+      <li class="step" data-step="2" data-state="todo">
+        <span class="station">3</span>
+        <h3>Follow-up</h3>
+        <div class="sends">Asks <q>What must happen before we re-deploy SDK 7.0?</q></div>
+        <p>A new run in the same thread. The answer builds on the findings and decisions of steps 1 and 2.</p>
+        <p class="watch"><b>Watch:</b> nothing is repeated. The thread holds the incident.</p>
+        <p class="proof" role="status"></p>
+        <button class="primary" type="button" data-prompt="What must happen before we re-deploy SDK 7.0?">Follow-up</button>
+      </li>
+    </ol>
+    <h2>Who can do what</h2>
+    <p class="roster-note">Specialists hold read-only tools. Write tools live only on the commander, and each one waits for you.</p>
+    <div id="roster"><p class="roster-note">Loading the agents' tools.</p></div>
+  </aside>
+
+  <section class="col convo" aria-label="Conversation">
+    <div class="pane-head"><h2>Conversation with the incident commander</h2><span class="meta" id="thread"></span></div>
+    <div id="chat" aria-live="polite">
+      <p class="empty" id="empty">Start with <b>Investigate</b> on the left. The commander's answers, its delegations and every approval request appear here.</p>
+    </div>
+    <form class="composer" id="composer">
+      <label class="visually-hidden" for="input">Message to the incident commander</label>
+      <textarea id="input" placeholder="Or type your own message to the commander"></textarea>
+      <button id="send" class="primary" type="submit">Send</button>
+    </form>
+  </section>
+
+  <section class="col events" aria-label="AG-UI events">
+    <div class="pane-head">
+      <h2><span class="bar" aria-hidden="true"></span>AG-UI events</h2>
+      <p class="what">AG-UI is the protocol between agent and screen: the server streams typed events, and this page draws everything from them.</p>
+      <div class="seg" role="group" aria-label="Event view">
+        <button type="button" id="view-timeline" aria-pressed="true">Timeline</button>
+        <button type="button" id="view-raw" aria-pressed="false">Raw events <span class="count" id="count">0</span></button>
+      </div>
+    </div>
+    <div id="timeline"><p class="tl-empty">Each run appears here as a group, with one line per step and the event type next to it.</p></div>
+    <div id="raw" hidden>
+      <label class="raw-bar"><input type="checkbox" id="showDeltas" /> Show text and argument deltas</label>
+      <div id="raw-list"></div>
+    </div>
+  </section>
+</main>
+
+<main id="view-workflow" class="view cols" role="tabpanel" aria-labelledby="tab-workflow" hidden>
+  <aside class="col rail" aria-label="Tickets">
+    <h2>Run the workflow</h2>
+    <p class="roster-note">The workflow <code>incidentTriage</code> runs on the server, the same one Mastra Studio shows. Pick a ticket.</p>
+    <div class="tickets">
+      <article class="ticket">
+        <h3>INC-4711</h3>
+        <p>Checkout fails since 14:05. The mail carries a customer's name, email and card.</p>
+        <p class="watch"><b>Watch:</b> the branch takes the incident path, and the run pauses for you.</p>
+        <button class="primary" type="button" data-ticket="INC-4711">Run INC-4711</button>
+      </article>
+      <article class="ticket">
+        <h3>INC-4712</h3>
+        <p>A typo in the invoice footer. No customer impact.</p>
+        <p class="watch"><b>Watch:</b> the branch files it. No investigation, no large model.</p>
+        <button class="primary" type="button" data-ticket="INC-4712">Run INC-4712</button>
+      </article>
+    </div>
+    <h2>Who decides where</h2>
+    <ul class="kinds">
+      <li><span class="kshape k-code" aria-hidden="true"></span><span><b>Code</b> picks the path, removes customer data and makes the change.</span></li>
+      <li><span class="kshape k-model" aria-hidden="true"></span><span><b>A model</b> fills two open boxes: classify and investigate.</span></li>
+      <li><span class="kshape k-person" aria-hidden="true"></span><span><b>A person</b> approves or declines.</span></li>
+    </ul>
+  </aside>
+
+  <section class="col convo" aria-label="Workflow">
+    <div class="pane-head"><h2>Workflow incidentTriage</h2><span class="meta" id="wf-run">No run yet</span></div>
+    <div id="wf-flow" class="flow" aria-live="polite">
+      <ol class="fline">
+        <li class="fstep" data-step="load-ticket" data-kind="code" data-state="todo">
+          <span class="station"></span>
+          <div class="fhead"><h3>load-ticket</h3><span class="kind">Code</span><span class="fstate"></span></div>
+          <p class="fdesc">Loads the ticket and removes customer data, once, at the entrance.</p>
+          <div class="detail"></div>
+        </li>
+        <li class="fstep" data-step="classify" data-kind="model" data-state="todo">
+          <span class="station"></span>
+          <div class="fhead"><h3>classify</h3><span class="kind">Small model, no tools</span><span class="fstate"></span></div>
+          <p class="fdesc">Labels severity, service and category in a fixed schema.</p>
+          <div class="detail"></div>
+        </li>
+        <li class="fstep" data-step="branch" data-kind="code" data-state="todo">
+          <span class="station"></span>
+          <div class="fhead"><h3>branch</h3><span class="kind">Code</span><span class="fstate"></span></div>
+          <p class="fdesc">An if statement on the severity picks the path.</p>
+          <div class="detail"></div>
+        </li>
+        <li class="fstep side" data-step="create-backlog-item" data-kind="code" data-state="todo">
+          <span class="station"></span>
+          <div class="fhead"><h3>create-backlog-item</h3><span class="kind">Code, sev3 only</span><span class="fstate"></span></div>
+          <p class="fdesc">Files the ticket. Nothing else runs.</p>
+          <div class="detail"></div>
+        </li>
+        <li class="fstep" data-step="investigate" data-kind="model" data-state="todo">
+          <span class="station"></span>
+          <div class="fhead"><h3>investigate</h3><span class="kind">Large model, supervisor</span><span class="fstate"></span></div>
+          <p class="fdesc">The investigator asks logAnalyst and deployHistorian and proposes one action. It holds no write tools.</p>
+          <div class="detail"></div>
+        </li>
+        <li class="fstep" data-step="approve" data-kind="person" data-state="todo">
+          <span class="station"></span>
+          <div class="fhead"><h3>approve-remediation</h3><span class="kind">Person</span><span class="fstate"></span></div>
+          <p class="fdesc">The workflow suspends and waits for your decision as stored state.</p>
+          <div class="detail"></div>
+        </li>
+        <li class="fstep" data-step="execute" data-kind="code" data-state="todo">
+          <span class="station"></span>
+          <div class="fhead"><h3>execute-remediation</h3><span class="kind">Code</span><span class="fstate"></span></div>
+          <p class="fdesc">Plain code checks the allow list and runs the change, or hands over to on-call.</p>
+          <div class="detail"></div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="col events" aria-label="AG-UI events of the workflow">
+    <div class="pane-head">
+      <h2><span class="bar" aria-hidden="true"></span>AG-UI events</h2>
+      <p class="what">The server turns each workflow step into an AG-UI event. Same protocol as the chat.</p>
+      <div class="seg" role="group" aria-label="Event view">
+        <button type="button" id="wf-view-timeline" aria-pressed="true">Timeline</button>
+        <button type="button" id="wf-view-raw" aria-pressed="false">Raw events <span class="count" id="wf-count">0</span></button>
+      </div>
+    </div>
+    <div id="wf-timeline" class="tl"></div>
+    <div id="wf-raw" class="rawbox" hidden><div id="wf-raw-list"></div></div>
+  </section>
+</main>
+
+<main id="view-viz" class="view viz" role="tabpanel" aria-labelledby="tab-viz" hidden>
+  <section class="viz-section" id="viz-workflow" aria-labelledby="viz-workflow-title">
+    <div class="viz-bar">
+      <h2 class="viz-title" id="viz-workflow-title">Workflow <span>code decides the path</span></h2>
+      <div class="seg" role="group" aria-label="Workflow scenario" data-role="scenarios"></div>
+      <div class="viz-controls">
+        <button type="button" data-role="restart">Restart</button>
+        <button type="button" data-role="prev">Back</button>
+        <span class="viz-count" data-role="count" aria-live="polite"></span>
+        <button type="button" data-role="next" class="primary">Next</button>
+      </div>
+    </div>
+    <div class="viz-stage">
+      <figure class="viz-map">
+        <svg class="viz-svg" data-role="svg" role="img" aria-label="How a ticket flows in the workflow: load-ticket, classify, branch, then either a backlog item or the investigation with two specialists, a person's approval and the execution."></svg>
+        <figcaption class="viz-legend" data-role="legend"><button type="button" class="viz-next-map">Below: the same incident in the chat, without a workflow</button></figcaption>
+      </figure>
+      <aside class="viz-caption" data-role="caption" aria-live="polite"></aside>
+    </div>
+  </section>
+  <section class="viz-section" id="viz-chat" aria-labelledby="viz-chat-title">
+    <div class="viz-bar">
+      <h2 class="viz-title" id="viz-chat-title">Chat <span>no workflow, the model decides the path</span></h2>
+      <div class="seg" role="group" aria-label="Chat scenario" data-role="scenarios"></div>
+      <div class="viz-controls">
+        <button type="button" data-role="restart">Restart</button>
+        <button type="button" data-role="prev">Back</button>
+        <span class="viz-count" data-role="count" aria-live="polite"></span>
+        <button type="button" data-role="next" class="primary">Next</button>
+      </div>
+    </div>
+    <div class="viz-stage">
+      <figure class="viz-map">
+        <svg class="viz-svg" data-role="svg" role="img" aria-label="How a ticket flows in the chat: the commander on the large model reads the message, asks two specialists through a delegation hook that redacts customer data, may call a read tool, and requests a write tool that waits for a person's approval."></svg>
+        <figcaption class="viz-legend" data-role="legend"></figcaption>
+      </figure>
+      <aside class="viz-caption" data-role="caption" aria-live="polite"></aside>
+    </div>
+  </section>
+</main>
+<script type="module" src="/desk/agui-client.js"></script>
+</body>
+</html>

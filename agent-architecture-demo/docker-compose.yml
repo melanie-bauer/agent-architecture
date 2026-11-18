@@ -1,0 +1,27 @@
+# Start: docker compose up --build
+# Then open http://localhost:4111/planner (planner), http://localhost:4111/desk (Incident Desk), http://localhost:4111 (Studio)
+#
+# Without a .env file everything runs with the scripted mock model.
+# Live: create .env next to this file with OPENAI_API_KEY=sk-...
+#       Add PLANNER_MODE=mock to keep only the planner scripted.
+name: agent-network-demo # project name in Docker Desktop (network, volume and container names derive from it)
+services:
+  mastra-server: # one Mastra server: Studio, the Incident Desk (/desk) and the planner (/planner)
+    build: .
+    image: agent-network-demo
+    container_name: mastra-server
+    ports:
+      - "4111:4111"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MOCK_LATENCY_MS: ${MOCK_LATENCY_MS:-600}
+      PLANNER_MODE: ${PLANNER_MODE:-}
+      PLANNER_REASONING_EFFORT: ${PLANNER_REASONING_EFFORT:-}
+      PLANNER_SYSTEM_LATENCY: ${PLANNER_SYSTEM_LATENCY:-}
+    volumes:
+      - demo-data:/app/data # threads, paused workflows and traces survive a restart
+
+volumes:
+  demo-data:

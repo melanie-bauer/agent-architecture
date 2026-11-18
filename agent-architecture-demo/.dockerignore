@@ -1,0 +1,9 @@
+node_modules
+.mastra
+.env
+*.db
+*.db-shm
+*.db-wal
+*.duckdb
+*.duckdb.wal
+data

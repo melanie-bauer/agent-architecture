@@ -1,0 +1,35 @@
+# Only the slides (deck/) and the demo project (agent-architecture-demo/) are committed.
+# Everything else in this folder (run of show, cheat sheet, Q&A, notes, old-demo-dont-commit/) stays local.
+/*
+!/.gitignore
+!/deck/
+!/agent-architecture-demo/
+
+# Secrets: the API key lives in agent-architecture-demo/.env, copy .env.example to create it
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output (Docker builds the planner UI itself)
+node_modules/
+dist/
+.mastra/
+
+# Local databases and traces written by the demo
+*.db
+*.db-shm
+*.db-wal
+*.duckdb
+*.duckdb.wal
+/agent-architecture-demo/data/
+
+# Tooling and scratch
+.playwright/
+.playwright-cli/
+.claude/
+.build/
+screenshots/
+recordings/
+*.log
+.DS_Store
+Thumbs.db

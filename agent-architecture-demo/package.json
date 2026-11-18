@@ -1,0 +1,57 @@
+{
+  "name": "incident-desk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "@ag-ui/client": "^1.0.3",
+    "@ag-ui/core": "^1.0.3",
+    "@ag-ui/encoder": "^1.0.3",
+    "@ag-ui/mastra": "^2.0.2",
+    "@ai-sdk/openai": "^4.0.106",
+    "@copilotkit/runtime": "^1.83.0",
+    "@mastra/client-js": "^1.58.0",
+    "@mastra/core": "^1.81.0",
+    "@mastra/duckdb": "^1.17.0",
+    "@mastra/evals": "^1.10.10",
+    "@mastra/libsql": "^1.28.0",
+    "@mastra/memory": "^1.40.0",
+    "@mastra/observability": "^1.23.0",
+    "ai": "^7.0.159",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@copilotkit/react-core": "^1.83.0",
+    "@copilotkit/react-ui": "^1.83.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "cross-env": "^10.1.0",
+    "esbuild": "^0.28.2",
+    "lucide-react": "^0.525.0",
+    "mastra": "^1.37.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "description": "Incident Desk: demo for \"Agents don't need more tools. They need architecture.\" (Mastra + AG-UI)",
+  "scripts": {
+    "dev": "mastra dev",
+    "dev:mock": "cross-env DEMO_MODE=mock MOCK_LATENCY_MS=600 mastra dev",
+    "smoke": "tsx scripts/smoke.ts",
+    "test": "node --import tsx --test test/architecture.test.ts",
+    "probe:live": "tsx scripts/live-probe.ts",
+    "build:ui": "esbuild ui-incident-desk/src/client.ts --bundle --format=esm --target=es2022 --minify --outfile=ui-incident-desk/agui-client.js",
+    "build:planner": "vite build --config ui-planner/vite.config.ts",
+    "dev:planner-ui": "vite --config ui-planner/vite.config.ts",
+    "planner:smoke": "tsx scripts/planner-smoke.ts",
+    "planner:measure": "tsx scripts/planner-measure.ts",
+    "dev:planner-mock": "cross-env PLANNER_MODE=mock MOCK_LATENCY_MS=600 mastra dev"
+  }
+}
