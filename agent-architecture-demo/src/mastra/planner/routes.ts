@@ -2,7 +2,8 @@
 //   /copilotkit          CopilotKit runtime (AG-UI) – agents "single" | "centralized" | "decentralized"
 //   /planner             the React UI (ui-planner/dist)
 //   /planner/events      SSE stream of the visualisation bus
-//   /planner/run         POST {mode, request}: a new request starts in one setup (request: rooms | travelUs | conference | travel).
+//   /planner/run         POST {mode, request, question?}: a new request starts in one setup (request: rooms | travelUs | conference | travel);
+//                        with question: a typed follow-up to that request (no new request, the agents answer it).
 //                        Clears nothing in the plan (plans accumulate); a new run id, the peers' board and message budget start fresh
 //   /planner/reset       POST {scope}: scope "all" (default) clears every plan, the board and the network budgets (the Reset button);
 //                        "run" is the same as /planner/run (kept for older clients); "network" changes nothing on the server
@@ -75,7 +76,8 @@ export function plannerRoutes(root: string) {
         const body = await c.req.json().catch(() => ({}));
         if (!PLAN_MODES.includes(body?.mode)) return c.json({ error: `mode must be one of ${PLAN_MODES.join(', ')}` }, 400);
         const request: RequestKind = REQUEST_KINDS.includes(body?.request) ? body.request : 'conference';
-        return c.json({ ok: true, run: startRun(body.mode as PlanMode, request) });
+        const question = typeof body?.question === 'string' && body.question.trim() ? body.question.trim().slice(0, 1000) : undefined;
+        return c.json({ ok: true, run: startRun(body.mode as PlanMode, request, question) });
       },
     }),
     registerApiRoute('/planner/reset', {

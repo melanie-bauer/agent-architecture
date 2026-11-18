@@ -199,12 +199,23 @@ export function App() {
     post('/planner/reset', { scope: 'all' });
   };
   // a new request starts a run: the map and counters of this setup start fresh, the plan is kept (only Reset clears it)
-  const beforeRun = useCallback(async (kind: RequestKind) => {
+  const beforeRun = useCallback(async (kind: RequestKind, question?: string) => {
     const m = modeRef.current;
     armed.current[m] = { kind, at: Date.now(), sawLoading: false };
     setNets((s) => ({ ...s, [m]: emptyNet(kind) }));
-    await post('/planner/run', { mode: m, request: kind });
+    await post('/planner/run', { mode: m, request: kind, ...(question ? { question } : {}) });
   }, []);
+
+  // typed text: a recognised request starts that request; anything else is a follow-up to the current request
+  // (same checklist and agents, the plan stays), never the full conference run; a declined-booking follow-up starts no run
+  const beforeTyped = useCallback(
+    (text: string) => {
+      if (/^the booking was declined/i.test(text.trim())) return undefined;
+      const kind = kindOf(text);
+      return kind ? beforeRun(kind) : beforeRun(plansRef.current?.[modeRef.current]?.request ?? 'rooms', text.trim());
+    },
+    [beforeRun],
+  );
 
   const net = nets[mode];
   const working = Object.values(net.nodes).filter((n) => n.busy > 0).length;
@@ -265,9 +276,10 @@ export function App() {
               </button>
             ))}
           </div>
-          <div className={`status ${working ? 'busy' : ''}`} aria-live="polite">
+          {/* between model calls no agent is busy, but the request is still running: say so instead of "Idle" */}
+          <div className={`status ${running ? 'busy' : ''}`} aria-live="polite">
             <i aria-hidden="true" />
-            {working ? `${working} ${working === 1 ? 'agent' : 'agents'} working` : 'Idle'}
+            {working ? `${working} ${working === 1 ? 'agent' : 'agents'} working` : running ? 'Working' : 'Idle'}
           </div>
           <div className="topbar-end">
             {mode !== 'single' && info.transport && <span className={`badge ${info.transport}`}>{info.transport === 'a2a' ? 'A2A over HTTP' : 'In process'}</span>}
@@ -352,7 +364,7 @@ export function App() {
             <div key={`${m}-${epoch}-${chatEpoch[m]}`} className="mode-chat" hidden={!dockOpen || m !== mode}>
               <CopilotKit runtimeUrl="/copilotkit" agent={m} showDevConsole={false}>
                 <ChatPlan.Provider value={plans?.[m] ?? null}>
-                  <ModeChat mode={m} eventName={base?.event.name} beforeRun={beforeRun} onReady={onReady} onLoading={onLoading} onFailed={onFailed} />
+                  <ModeChat mode={m} eventName={base?.event.name} beforeTyped={beforeTyped} onReady={onReady} onLoading={onLoading} onFailed={onFailed} />
                 </ChatPlan.Provider>
               </CopilotKit>
             </div>
@@ -392,7 +404,7 @@ function ChatAnswer(props: any) {
 }
 
 /** The chat of one mode. It stays mounted while another mode is on screen, so its conversation is kept. */
-function ModeChat({ mode, eventName, beforeRun, onReady, onLoading, onFailed }: { mode: Mode; eventName?: string; beforeRun: (k: RequestKind) => Promise<void>; onReady: (m: Mode, h: ChatHandle) => void; onLoading: (m: Mode, v: boolean) => void; onFailed: (m: Mode, error: string) => void }) {
+function ModeChat({ mode, eventName, beforeTyped, onReady, onLoading, onFailed }: { mode: Mode; eventName?: string; beforeTyped: (text: string) => Promise<void> | undefined; onReady: (m: Mode, h: ChatHandle) => void; onLoading: (m: Mode, v: boolean) => void; onFailed: (m: Mode, error: string) => void }) {
   const chat = useCopilotChatInternal();
   const append = chat.appendMessage;
   const messages = useRef(chat.messages);
@@ -428,8 +440,7 @@ function ModeChat({ mode, eventName, beforeRun, onReady, onLoading, onFailed }: 
         { title: REQUESTS.rooms.title, message: REQUESTS.rooms.text },
         { title: REQUESTS.travelUs.title, message: REQUESTS.travelUs.text },
       ]}
-      // a typed follow-up about a declined booking keeps the plan; anything else starts a new request
-      onSubmitMessage={(text: string) => (/^the booking was declined/i.test(text.trim()) ? undefined : beforeRun(kindOf(text)))}
+      onSubmitMessage={beforeTyped}
     />
   );
 }

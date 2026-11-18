@@ -7,13 +7,27 @@
 // Bookings only create a pending approval; after a decline the next proposal has 2 hotel nights instead of 3.
 import type { MockAction, MockCtx, MockScript } from '../model/mock-model';
 import { shortlist, TALKS_PER_TRACK, travellingSpeakers } from './data';
-import { currentRequest } from './plan-store';
+import { currentQuestion, currentRequest, planSummary } from './plan-store';
 import { modeOf } from './viz';
 
 type Step = MockAction | ((ctx: MockCtx) => MockAction);
 type Call = { tool: string; args: Record<string, unknown> };
 const lastOut = (ctx: MockCtx, tool: string) => ctx.turnToolResults.filter((r) => r.toolName === tool).at(-1)?.output ?? '';
 const out = (ctx: MockCtx, tool: string) => ctx.turnToolResults.filter((r) => r.toolName === tool).map((r) => r.output).join('\n');
+/** The text of a tool result for an answer: unwraps JSON strings and {type:'text', value} (what an A2A agent tool returns). */
+function textOf(s: string): string {
+  let v: any = s;
+  for (let i = 0; i < 4 && typeof v === 'string'; i++) {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      break;
+    }
+  }
+  if (v && typeof v === 'object' && typeof v.value === 'string') return v.value;
+  return typeof v === 'string' ? v : s;
+}
+const textOut = (ctx: MockCtx, tool: string) => ctx.turnToolResults.filter((r) => r.toolName === tool).map((r) => textOf(r.output)).join(' ');
 const num = (s: string, key: string) => Number(s.match(new RegExp(`\\\\?"${key}\\\\?":(\\d+)`))?.[1] ?? NaN);
 const eur = (n: number) => (Number.isFinite(n) ? `€${n.toLocaleString('en-US')}` : '€?');
 
@@ -230,7 +244,7 @@ const STAGE: Record<string, Partial<Record<'rooms' | 'travelUs', MockScript>>> =
         { tool: 'agent-venue', args: { prompt: 'Accessibility says Room C has no step-free access. Drop Room C, give its track another room, and tell me the new cost.' } },
         (c) => ({ tool: 'agent-budget', args: { prompt: `Check the venue cost against the budget and record the check: venue ${eur(firstEur(lastOut(c, 'agent-venue')))}.` } }),
       ],
-      (c) => `${ROOMS_DONE} Venue cost ${eur(firstEur(lastOut(c, 'agent-venue')))}. Budget: ${out(c, 'agent-budget').replace(/^"|"$/g, '')} See Rooms and Budget.`,
+      (c) => `${ROOMS_DONE} Venue cost ${eur(firstEur(lastOut(c, 'agent-venue')))}. Budget: ${textOut(c, 'agent-budget')} See Rooms and Budget.`,
     ),
     travelUs: (ctx) =>
       seq(
@@ -571,6 +585,9 @@ export const plannerMockScripts: Record<string, MockScript> = Object.fromEntries
   Object.entries(bigRequests).map(([id, big]) => [
     id,
     (ctx: MockCtx) => {
+      // a typed follow-up question: the agent the person talks to answers from the plan, no tools (a live model would look things up)
+      const question = currentQuestion(modeOf(id));
+      if (question && ctx.lastUserText.includes(question)) return { text: `Mock mode has no answers for free questions. Where the plan stands: ${planSummary(modeOf(id))}` };
       const kind = currentRequest(modeOf(id));
       const stage = kind === 'rooms' || kind === 'travelUs' ? STAGE[id]?.[kind] : undefined;
       return (stage ?? big)(ctx);

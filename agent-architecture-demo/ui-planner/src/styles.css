@@ -265,7 +265,8 @@ table.data tr.row-dropped td b { text-decoration: line-through; color: var(--pro
 table.data tr.row-chosen td { background: #f1faf4; }
 table.data tr.row-stale td { background: var(--warn-tint); }
 table.data .pill { margin-right: 4px; }
-table.data .who { white-space: normal; }
+table.data .who { white-space: normal; align-items: flex-start; }
+table.data .who .stop { margin-top: 5px; }
 table.data td .pill.warn { margin-left: 6px; }
 
 .talk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -293,15 +294,25 @@ table.data td .pill.warn { margin-left: 6px; }
 .dock .chat { flex: 1; min-height: 0; }
 .dock .copilotKitChat { height: 100%; display: flex; flex-direction: column; background: var(--surface); }
 .dock .copilotKitHeader { display: none; }
-.dock .copilotKitMessages { font-size: 16px; padding: 14px 16px; }
+/* overflow auto: no permanent scrollbar with arrow buttons next to the suggestions */
+.dock .copilotKitMessages { font-size: 16px; padding: 14px 16px; overflow-y: auto; }
+.dock .copilotKitMessagesContainer { padding: 6px 4px; }
+/* only Copy is useful here: regenerate would re-run a request without starting a new run, the thumbs go nowhere */
+.dock .copilotKitMessageControlButton:not([aria-label*="opy"]) { display: none; }
+/* the welcome text is not an answer: no controls under it */
+.dock .copilotKitMessagesContainer > .copilotKitAssistantMessage:first-child .copilotKitMessageControls { display: none; }
 .dock .copilotKitAssistantMessage { line-height: 1.55; }
 .dock .copilotKitAssistantMessage ul { padding-left: 20px; }
 .dock .copilotKitUserMessage { background: var(--ink); color: #ffffff; font-size: 15px; }
 .dock .copilotKitMessages footer, .dock .copilotKitInputContainer { background: var(--surface); }
 .dock .suggestion, .dock .copilotKitMessages footer .suggestions button { font-size: 16px !important; font-weight: 600; border: 2px solid var(--ink) !important; color: var(--ink); background: #ffffff; padding: 8px 14px !important; border-radius: 999px !important; }
 .dock .suggestion:hover { background: var(--ink); color: #ffffff; }
-.dock .copilotKitInput { border-radius: 10px; border-color: var(--line); }
-.dock .copilotKitInput textarea { font-size: 16px; }
+/* the input sat flush on the window's bottom edge: room around it, no extra side margin */
+.dock .copilotKitInputContainer { padding: 8px 14px 14px; }
+.dock .copilotKitInput { border-radius: 10px; border-color: var(--line); margin: 0; width: auto; min-height: 64px; }
+/* CopilotKit sizes the textarea from scrollHeight; measured while its chat is hidden (other mode, closed dock) that is 0,
+   and the inline height: 0px stuck: no placeholder, hard to click. min-height wins over the inline height. */
+.dock .copilotKitInput textarea { font-size: 16px; min-height: 24px; }
 .dock .poweredBy { display: none !important; }
 .dock-rail { flex: 1; border: 0; background: var(--surface); display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 18px; color: var(--ink); font-weight: 800; }
 .dock-rail:hover { background: var(--ground); }

@@ -42,8 +42,11 @@ export function Who({ m, verb = true }: { m: Meta & { prev?: unknown }; verb?: b
   return (
     <span className={`who d-${m.domain}`} title={`${action} by ${writerName(m)} at ${clock(m.at)}`}>
       <i className="stop" aria-hidden="true" />
-      {verb && <span className="who-verb">{action} by </span>}
-      {writerName(m)}
+      {/* one flex item for verb and name, so a narrow cell wraps it as text, not as two columns */}
+      <span>
+        {verb && <span className="who-verb">{action} by </span>}
+        {writerName(m)}
+      </span>
       {isFresh(m.at) && <span className="who-new">new</span>}
     </span>
   );

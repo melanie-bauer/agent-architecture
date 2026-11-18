@@ -27,15 +27,17 @@ export const REQUESTS: Record<RequestKind, { title: string; text: string; short:
 export const MAIN_REQUESTS: RequestKind[] = ['rooms', 'travelUs'];
 export const MORE_REQUESTS: RequestKind[] = ['conference', 'travel'];
 
-/** A request typed into the chat: the exact text of a known request, otherwise a guess from its words. */
-export function kindOf(text: string): RequestKind {
+/** A request typed into the chat: the exact text of a known request, otherwise a guess from its words.
+ *  null: no request recognised (a question, a correction): the chat treats it as a follow-up to the current request. */
+export function kindOf(text: string): RequestKind | null {
   const t = text.trim();
   const exact = (Object.keys(REQUESTS) as RequestKind[]).find((k) => REQUESTS[k].text === t);
   if (exact) return exact;
   if (/\bUS\b|four speakers/i.test(t)) return 'travelUs';
   if (/passport|visa|flight|hotel/i.test(t)) return 'travel';
   if (/room/i.test(t) && !/catering|schedule/i.test(t)) return 'rooms';
-  return 'conference';
+  if (/plan (the|a|our) conference|whole conference|catering/i.test(t)) return 'conference';
+  return null;
 }
 
 /** Where a request enters the peer network (decentralized): rooms at Venue, travelUs at Travel, the big ones at Program. */

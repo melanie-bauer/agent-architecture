@@ -66,7 +66,8 @@ export type Approval = {
 };
 export type Change = { mode: PlanMode; kind: string; key: string; by: string; domain: string; at: number; summary: string; action: 'added' | 'changed' | 'removed' };
 
-export type Run = { id: number; request: RequestKind; at: number };
+/** question: a typed follow-up that is not a new request (the run keeps the request, the agents answer the question). */
+export type Run = { id: number; request: RequestKind; at: number; question?: string };
 export type Plan = {
   /** the request of the current (or last) run */
   request: RequestKind;
@@ -128,8 +129,8 @@ g.__plannerRunSeq ??= 0;
  * What starts fresh: the run id (what this run writes counts as done), the request the agents work on,
  * and who saw passport data (a measurement of this run). The peers' board and message budget start fresh too (peers.ts, on the "run" event).
  */
-export function startRun(mode: PlanMode, request: RequestKind) {
-  const run: Run = { id: ++g.__plannerRunSeq, request, at: Date.now() };
+export function startRun(mode: PlanMode, request: RequestKind, question?: string) {
+  const run: Run = { id: ++g.__plannerRunSeq, request, at: Date.now(), ...(question ? { question } : {}) };
   plans[mode].request = request;
   plans[mode].run = run;
   resetPassportSeen(mode);
@@ -295,6 +296,24 @@ export function chooseCaterer(w: Writer, caterer: string, headcount: number) {
 // ---------------- travel ----------------
 /** The request a mode is working on (set by startRun, /planner/run). */
 export const currentRequest = (mode: PlanMode): RequestKind => plans[mode].request;
+/** The typed follow-up question of the current run, if it is one. */
+export const currentQuestion = (mode: PlanMode): string | undefined => plans[mode].run?.question;
+
+/** A short state of the plan in words (the mock's answer to a follow-up question). */
+export function planSummary(mode: PlanMode): string {
+  const p = plans[mode];
+  const rooms = Object.keys(p.rooms).length;
+  const approvals = p.approvals.map((a) => a.status);
+  // the same total as the overview: committed spend plus the cost lines in the plan
+  const planned = ledger.committed.reduce((s, c) => s + c.eur, 0) + Object.values(p.costs).reduce((s, c) => s + (c?.eur ?? 0), 0);
+  const eur = (n: number) => `€${n.toLocaleString('en-US')}`;
+  const parts = [
+    rooms ? `${rooms} rooms assigned` : 'no rooms assigned yet',
+    approvals.length ? `bookings: ${approvals.filter((s) => s === 'approved').length} approved, ${approvals.filter((s) => s === 'pending').length} waiting for approval` : 'no bookings proposed yet',
+    `planned ${eur(planned)} of ${eur(ledger.budgetEur)}, buffer ${eur(ledger.budgetEur - planned)}`,
+  ];
+  return parts.join('; ') + '.';
+}
 
 /** Flight and hotel at list prices, in one step. Only runs when a person approved it (approve below). */
 export function bookTravel(w: Writer, speakerIds: string[], nights: number) {
