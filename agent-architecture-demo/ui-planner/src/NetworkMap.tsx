@@ -55,12 +55,25 @@ function layout(w: number, h: number, mode: Mode) {
   return { pos, cx, cy };
 }
 
+/** The router sits in the corner nearest its entry peer, so its line is short and crosses no other station. */
+function routerAt(w: number, h: number, cx: number, cy: number, entry: Pt | undefined, person: boolean): Pt {
+  const half = pillW('Router') / 2 + 16;
+  const [ex, ey] = entry ?? [w, 0];
+  const left = ex < cx;
+  const top = ey < cy;
+  // the person who approves bookings owns the top left corner
+  const y = top ? 44 + (left && person ? 80 : 0) : h - PILL_H / 2 - 16;
+  return [Math.round(left ? half : w - half), y];
+}
+
 export function NetworkMap({ mode, net, seenBy, entry = 'program', person = null, picked, onPick }: { mode: Mode; net: NetState; seenBy: string[]; entry?: string; person?: PersonState; picked?: string | null; onPick?: (id: string) => void }) {
   const now = useNow();
   const [ref, { w, h }] = useSize<HTMLDivElement>();
   const center = mode === 'single' ? 'single' : mode === 'centralized' ? 'triage' : 'board';
   const recent = (t?: number, ms = 2500) => !!t && now - t < ms;
   const { pos, cx, cy } = layout(w, h, mode);
+  const routedTo = Object.values(net.edges).find((e) => e.from === 'router')?.to;
+  pos.router = routerAt(w, h, cx, cy, routedTo ? pos[routedTo] : undefined, !!person);
   const curve = (a: Pt, b: Pt, bend = 0.25) => {
     const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
     return `M${a[0]},${a[1]} Q${mx + (cx - mx) * bend},${my + (cy - my) * bend} ${b[0]},${b[1]}`;
@@ -77,7 +90,7 @@ export function NetworkMap({ mode, net, seenBy, entry = 'program', person = null
           {Object.values(net.edges).map((e) => {
             const a = pos[e.from], b = pos[e.to];
             if (!a || !b) return null;
-            const isHub = e.from === center || e.to === center;
+            const isHub = e.from === center || e.to === center || e.from === 'router';
             const d = isHub ? `M${a[0]},${a[1]} L${b[0]},${b[1]}` : curve(a, b);
             const sw = Math.min(14, 5 + e.count * 1.5);
             return (
@@ -112,6 +125,9 @@ export function NetworkMap({ mode, net, seenBy, entry = 'program', person = null
           {DOMAINS.map((d) => (
             <Station key={d} id={d} at={pos[d]} data={mode === 'single'} net={net} recent={recent} saw={seenBy.includes(d)} entry={mode === 'decentralized' && d === entry} picked={picked === d} onPick={mode === 'single' ? undefined : onPick} />
           ))}
+
+          {/* the router picked the entry peer of an own request: one small model call, outside the peer network */}
+          {mode === 'decentralized' && net.nodes.router && <Station id="router" at={pos.router} net={net} recent={recent} saw={false} />}
 
           {/* a person decides: bookings wait for approval, outside the agents */}
           {/* single: below the Planner, in the gap between Catering and Budget; networks: the free corner next to Travel. No other line crosses it. */}

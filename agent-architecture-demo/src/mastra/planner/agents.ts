@@ -3,6 +3,8 @@
 //   centralized    a triage agent delegates to 7 specialists, over A2A (remote agents) or in process
 //   decentralized  peer to peer with a shared board: 7 peers, nobody in charge, they call each other over A2A
 // Four requests (requests.ts): the stage requests "rooms" and "travelUs", and the big "conference" and "travel".
+// Plus "open": what a person types into the chat. No fixed brief, the triage gets every specialist, and in the
+// decentralized setup a small router model picks the entry peer (routeRequest below, called by /planner/run).
 // Each agent gets the brief of the request its setup is working on (the plan store knows it), so prompts stay short,
 // the triage can only reach the specialists that request needs, and every run carries the request kind as trace metadata.
 import { Agent } from '@mastra/core/agent';
@@ -11,7 +13,7 @@ import { model } from '../model/models';
 import { EVENT } from './data';
 import { redactPassports } from './passport';
 import { peerTools, PLANNER_URL, setLocalResolver, transport } from './peers';
-import { currentRequest, type PlanMode } from './plan-store';
+import { currentEntry, currentRequest, currentText, type PlanMode } from './plan-store';
 import { REQUESTS, type RequestKind } from './requests';
 import { allDomainTools, DOMAINS, domainTools, type Domain } from './tools';
 import { emit, vizId } from './viz';
@@ -27,8 +29,14 @@ const SHORT = 'Answer in at most 3 short sentences with the numbers. No tables, 
 /** The final answer to the user (single agent, triage). */
 const FINAL = 'Answer the user in at most 5 short sentences. No tables, no lists. Do not repeat the plan; point to the screens instead (Overview, Rooms, Travel, Budget). Use no dashes as punctuation, no arrows and no buzzwords.';
 
+// ---------- an open request: the person's own words, no fixed brief ----------
+/** Do what was asked and nothing more: a question is answered with read tools, not with writes. */
+const OPEN_RULE = 'Do what the request asks, nothing more. If it is a question, answer it from your read tools and the plan; do not write. Write to the plan only what the request asks for.';
+const openText = (mode: PlanMode) => currentText(mode) ?? 'the latest user message';
+
 // ---------- what each domain does, per request ----------
 const BRIEF: Record<RequestKind, Partial<Record<Domain, string>>> = {
+  open: {},
   rooms: {
     venue: 'Assign Hall A to the keynotes and one room per track (Agents, AI Engineering, AI in Practice) with one assignRooms call. Never keep a room that Accessibility says is not step-free: drop it with dropRoom and move its track (Hall A can hold the keynotes and a track).',
     access: 'Check Hall A, Room B, Room C and Room D with checkRoomAccess and record all of them with one markRooms call.',
@@ -65,23 +73,26 @@ const ROLE: Record<Domain, { name: string; contract: string }> = {
   marketing: { name: 'Marketing', contract: 'Owns ticket sales and sponsors. Returns forecasts and signed sponsor money.' },
   access: { name: 'Accessibility', contract: 'Owns accessibility checks (step-free access, hearing support, captions). Flags rooms that exclude people.' },
 };
-const brief = (kind: RequestKind, d: Domain) => BRIEF[kind][d] ?? 'This request does not need your domain. Say so in one sentence.';
+const brief = (kind: RequestKind, d: Domain) =>
+  kind === 'open' ? `Handle the part of the request that belongs to your domain. ${OPEN_RULE}` : (BRIEF[kind][d] ?? 'This request does not need your domain. Say so in one sentence.');
 /** Every run carries the request kind and the setup as trace metadata (Studio > Traces). */
 const tracing = (mode: PlanMode, agent: string) => ({ metadata: { requestKind: currentRequest(mode), setup: mode, agent } });
 
 // ---------- (a) single agent ----------
-const SINGLE_STEPS: Record<RequestKind, number> = { rooms: 8, travelUs: 8, conference: 20, travel: 16 };
+const SINGLE_STEPS: Record<RequestKind, number> = { rooms: 8, travelUs: 8, conference: 20, travel: 16, open: 12 };
 export const plannerSingle = new Agent({
   id: 'planner-single',
   name: 'Conference Planner (single agent)',
   description: 'Plans the whole conference alone, with every tool.',
   instructions: () => {
     const kind = currentRequest('single');
-    const parts = REQUESTS[kind].domains.map((d) => brief(kind, d)).join(' ');
+    const task =
+      kind === 'open'
+        ? `The current request, in the user's words: ${openText('single')}\n${OPEN_RULE}`
+        : `The current request: ${REQUESTS[kind].text}\nDo this: ${REQUESTS[kind].domains.map((d) => brief(kind, d)).join(' ')}`;
     return `You plan a developer conference end to end. ${EVENT_BRIEF}
 You hold every tool: program, venue, catering, travel (with the passport registry and the airline and hotel systems), budget, marketing and accessibility. ${WRITE_RULE} ${APPROVAL_RULE}
-The current request: ${REQUESTS[kind].text}
-Do this: ${parts}
+${task}
 ${FINAL}`;
   },
   model: model('planner-single', 'large'),
@@ -138,6 +149,7 @@ export const triageDelegation = {
 
 // How the hub splits each request. It can only reach the specialists the request needs (see agents below).
 const TRIAGE_PLAN: Record<RequestKind, string> = {
+  open: 'Decide which specialists the request needs and ask only those; for a question that is usually one. Specialists cannot talk to each other: pass on what one finds if another needs it. If the request changes a cost, ask budget last, with the number.',
   rooms: 'Ask venue (assign the rooms) and access (check step-free access of every room) in the same step. Specialists cannot talk to each other: if access finds a room that is not step-free, tell venue to drop it and move its track. Then ask budget to check the venue cost, with the number.',
   travelUs:
     'Ask travel to propose flights and hotels for the four US speakers. Then ask budget to check the proposed travel total, with the number. If the user says a booking was declined, pass the reason to travel and ask for a new proposal, then ask budget with the new total. Never ask for passport numbers.',
@@ -145,7 +157,7 @@ const TRIAGE_PLAN: Record<RequestKind, string> = {
     'Ask program, venue, access, catering, travel and marketing at once. Specialists cannot talk to each other: pass findings on, for example a room that is not step-free goes to venue. Ask budget last, with all costs.',
   travel: 'Ask travel (it holds the passports and the airline and hotel systems) and program at once. Then budget with the travel cost. Never ask for passport numbers.',
 };
-const TRIAGE_STEPS: Record<RequestKind, number> = { rooms: 6, travelUs: 6, conference: 8, travel: 6 };
+const TRIAGE_STEPS: Record<RequestKind, number> = { rooms: 6, travelUs: 6, conference: 8, travel: 6, open: 8 };
 export const plannerTriage = new Agent({
   id: 'planner-triage',
   name: 'Conference Triage (centralized)',
@@ -155,12 +167,12 @@ export const plannerTriage = new Agent({
     return `You coordinate ${EVENT.name}. ${EVENT_BRIEF}
 You have no domain tools. Delegate to the specialists you have (${REQUESTS[kind].domains.join(', ')}). Each one records its own decisions in the shared plan; tell them to do so.
 Ask specialists whose work does not depend on each other in the same step, so they work at the same time. ${APPROVAL_RULE}
-The current request: ${REQUESTS[kind].text}
+${kind === 'open' ? `The current request, in the user's words: ${openText('centralized')}\n${OPEN_RULE} Tell each specialist exactly what you need from it.` : `The current request: ${REQUESTS[kind].text}`}
 ${TRIAGE_PLAN[kind]}
 ${FINAL}`;
   },
   model: model('planner-triage', 'large'),
-  // routing in code: the hub only gets the specialists this request needs
+  // routing in code: the hub only gets the specialists this request needs (an open request: all of them, the hub decides)
   agents: () => {
     const all: Record<string, any> = transport() === 'a2a' ? remoteSpecialists : specialists;
     return Object.fromEntries(REQUESTS[currentRequest('centralized')].domains.map((d) => [d, all[d]])) as any;
@@ -171,6 +183,8 @@ ${FINAL}`;
 // ---------- (c) decentralized: peer to peer with a shared board ----------
 // Who a peer should ask, per request. The network has no hub, so each peer must know its own dependencies.
 const PEER_ASKS: Record<RequestKind, Partial<Record<Domain, string>>> = {
+  // no choreography: each peer decides itself whom to ask
+  open: {},
   rooms: {
     venue:
       'You receive the user request. First assign the rooms with one assignRooms call and post them with the venue cost to the board. Then ask access (are the rooms step-free?) and budget (check the venue cost on the board) in the same step. If access names a room that is not step-free, drop it, move its track and post the new venue cost.',
@@ -189,7 +203,15 @@ const PEER_ASKS: Record<RequestKind, Partial<Record<Domain, string>>> = {
     program: 'You receive the user request. Ask travel to book (it holds the passports and the airline and hotel systems) and schedule the talks in the same step; then ask budget to check the travel cost.',
   },
 };
-const PEER_STEPS: Record<Domain, number> = { program: 10, venue: 8, catering: 6, travel: 8, budget: 5, marketing: 4, access: 4 };
+// access had 4 and ran out of steps live before it could answer Venue (checkRoomAccess, markRooms, then the answer)
+/**
+ * Open requests have no choreography, so two dependencies every peer must carry itself (there is no hub to remember them):
+ * a new cost goes to budget, and the peer the user talks to answers the user, not another agent.
+ */
+const PEER_COST_RULE = 'If you wrote or changed a cost in the plan, ask budget with askPeer whether it fits, with the number, before you answer.';
+const PEER_ANSWER_RULE = `Messages from peers start with [from <peer>]: answer them in at most 3 short sentences with the numbers. A message without that prefix comes from the user: ${FINAL}`;
+
+const PEER_STEPS: Record<Domain, number> = { program: 10, venue: 8, catering: 6, travel: 8, budget: 5, marketing: 4, access: 6 };
 
 export const peers = Object.fromEntries(
   DOMAINS.map((d) => [
@@ -202,9 +224,9 @@ export const peers = Object.fromEntries(
         const kind = currentRequest('decentralized');
         return `You are the ${ROLE[d].name} of ${EVENT.name}, one of seven peers. Nobody is in charge.
 ${ROLE[d].contract} ${EVENT_BRIEF}
-${WRITE_RULE}${d === 'travel' ? ` ${APPROVAL_RULE}` : ''} ${brief(kind, d)}
-If your part depends on another domain, ask that peer directly with askPeer. ${PEER_ASKS[kind][d] ?? ''} Post your result to the board.
-Requests from peers start with [from <peer>]: answer them. ${SHORT}`;
+${WRITE_RULE}${d === 'travel' ? ` ${APPROVAL_RULE}` : ''} ${kind === 'open' ? `The current request, in the user's words: ${openText('decentralized')}\nIf you receive it from the user and another peer owns it, ask that peer with askPeer and pass the answer on. ` : ''}${brief(kind, d)}
+If your part depends on another domain, ask that peer directly with askPeer. ${PEER_ASKS[kind][d] ?? ''}${kind === 'open' && d !== 'budget' ? `${PEER_COST_RULE} ` : ''}Post your result to the board.
+${kind === 'open' ? PEER_ANSWER_RULE : `Requests from peers start with [from <peer>]: answer them. ${SHORT}`}`;
       },
       model: model(`peer-${d}`, 'small'),
       tools: { ...domainTools(d, `peer-${d}`), ...peerTools(`peer-${d}`) },
@@ -214,8 +236,27 @@ Requests from peers start with [from <peer>]: answer them. ${SHORT}`;
 ) as unknown as Record<Domain, Agent>;
 setLocalResolver((id) => peers[id.replace(/^peer-/, '') as Domain]);
 
-/** The peer a request enters at: rooms at Venue, travelUs at Travel, the big requests at Program. */
-export const entryPeerFor = (kind: RequestKind) => peers[REQUESTS[kind].entry];
+/** The peer a request enters at: rooms at Venue, travelUs at Travel, the big requests at Program, an open request where the router sent it. */
+export const entryPeerFor = (kind: RequestKind) => peers[(kind === 'open' ? (currentEntry('decentralized') as Domain | undefined) : undefined) ?? REQUESTS[kind].entry];
+
+// ---------- the router (decentralized, open requests): one small model call picks the entry peer ----------
+const ROUTER_DOMAINS = DOMAINS.map((d) => `${d}: ${ROLE[d].contract}`).join('\n');
+export const plannerRouter = new Agent({
+  id: 'planner-router',
+  name: 'Request Router (peer to peer)',
+  description: 'Picks the peer a typed request enters at. Has no tools and does not answer the request.',
+  instructions: `You route a request about the conference ${EVENT.name} to the one peer that should receive it first. The peers:
+${ROUTER_DOMAINS}
+Answer with exactly one word, the peer's name: ${DOMAINS.join(', ')}. If several fit, pick the one that owns the main decision.`,
+  model: model('planner-router', 'small'),
+  defaultOptions: () => ({ maxSteps: 1, tracingOptions: tracing('decentralized', 'planner-router') }),
+});
+/** The entry peer for an open request (program when the answer names none). */
+export async function routeRequest(text: string): Promise<Domain> {
+  const r = await plannerRouter.generate(text);
+  const hit = String(r.text ?? '').toLowerCase().match(new RegExp(`\\b(${DOMAINS.join('|')})\\b`));
+  return (hit?.[1] as Domain | undefined) ?? 'program';
+}
 
 /**
  * The user has to talk to someone. In the peer network that depends on the request (the plan store knows it),
@@ -233,6 +274,7 @@ export const plannerEntryPeer: Agent = new Proxy(peers.program, {
 export const plannerAgents: Record<string, Agent> = {
   'planner-single': plannerSingle,
   'planner-triage': plannerTriage,
+  'planner-router': plannerRouter,
   ...Object.fromEntries(DOMAINS.map((d) => [`spec-${d}`, specialists[d]])),
   ...Object.fromEntries(DOMAINS.map((d) => [`peer-${d}`, peers[d]])),
 };

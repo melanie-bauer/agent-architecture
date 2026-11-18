@@ -3,7 +3,7 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode }
 import { clock, eur, PART_NAME, progress, type PartState, type Plan, type Plans } from '../api';
 import { NetworkMap } from '../NetworkMap';
 import { LABEL, type Entry, type Mode, type NetState, type RequestKind, type Turn } from '../network';
-import { ENTRY, REQUESTS } from '../requests';
+import { entryOf, requestTitle } from '../requests';
 import { replyLine, sentence } from '../sentences';
 import { MODE_NAME, MODE_TITLE, modeHint, Segmented } from '../ui';
 
@@ -13,6 +13,8 @@ export type Run = {
   id: string;
   mode: Mode;
   request: RequestKind;
+  /** the person's words, for an open request */
+  text?: string;
   seconds: number;
   llm: number;
   tools: number;
@@ -48,6 +50,7 @@ export function NetworkScreen({ mode, net, plan, plans, runs, live, info }: { mo
   const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => setPicked(null), [mode]);
   const kind = net.request ?? plan.request;
+  const entry = entryOf(kind, plan.run?.entry);
   const travel = kind === 'travel' || kind === 'travelUs';
   const last = plan.approvals?.at(-1);
   const person = last ? { status: last.status, by: mode === 'single' ? 'single' : last.requestedBy, old: !plan.run || last.run !== plan.run.id } : null;
@@ -58,8 +61,8 @@ export function NetworkScreen({ mode, net, plan, plans, runs, live, info }: { mo
         <div className="net-title">
           <h1>{view === 'runs' ? 'Compare runs' : MODE_TITLE[mode]}</h1>
           <p className="lede">
-            {view === 'runs' ? 'Every finished run, in every setup. Run the same request in each setup and compare the rows.' : modeHint(mode, net.request)}
-            {view === 'map' && mode === 'decentralized' && ` This request enters at ${LABEL[ENTRY[kind]]}.`}
+            {view === 'runs' ? 'Every finished run, in every setup. Run the same request in each setup and compare the rows.' : modeHint(mode, net.request, plan.run?.entry)}
+            {view === 'map' && mode === 'decentralized' && kind !== 'open' && entry && ` This request enters at ${LABEL[entry]}.`}
           </p>
         </div>
         <Segmented
@@ -79,7 +82,7 @@ export function NetworkScreen({ mode, net, plan, plans, runs, live, info }: { mo
           <Stats mode={mode} net={net} plan={plan} live={live} />
           <div className="net-body">
             <div className="net-map">
-              <NetworkMap mode={mode} net={net} seenBy={seenBy} entry={ENTRY[kind]} person={person} picked={picked} onPick={(id) => setPicked(picked === id ? null : id)} />
+              <NetworkMap mode={mode} net={net} seenBy={seenBy} entry={entry} person={person} picked={picked} onPick={(id) => setPicked(picked === id ? null : id)} />
               <div className="map-foot">
                 <Legend mode={mode} />
                 {(travel || seenBy.length > 0) && <PassportNote mode={mode} seenBy={seenBy} />}
@@ -195,8 +198,8 @@ function Stats({ mode, net, plan, live }: { mode: Mode; net: NetState; plan: Pla
       <Stat label="agent messages" value={net.messages} sub={mode === 'single' ? 'no other agent' : undefined}>
         Messages between agents: A2A delegations and peer questions. Tool calls do not count. Always 0 for the single agent: it has no other agent to talk to.
       </Stat>
-      <Stat label="plan parts done" value={started || pr.done ? `${pr.done} of ${pr.of}` : `0 of ${pr.of}`} sub={pr.already ? `${pr.already} already in the plan` : undefined}>
-        <span>What this run wrote of the parts its request needs.</span>
+      <Stat label="plan parts done" value={pr.of === 0 ? 'none' : `${pr.done} of ${pr.of}`} sub={pr.of === 0 ? 'own request' : pr.already ? `${pr.already} already in the plan` : undefined}>
+        <span>{pr.of === 0 ? 'An own request has no fixed parts: the agents decide what it needs. The Overview shows the plan as a whole.' : 'What this run wrote of the parts its request needs.'}</span>
         <ul className="tip-parts">
           {parts.map(([k, v]) => (
             <li key={k} className={v}>
@@ -278,7 +281,7 @@ function RunsView({ runs, plans, live, info }: { runs: Run[]; plans: Plans; live
                         <b>{MODE_NAME[r.mode]}</b>
                       </td>
                       <td data-label="Request">
-                        {REQUESTS[r.request].title}
+                        {requestTitle(r.request, r.text)}
                         <div className="note num">{clock(r.at)}</div>
                       </td>
                       <td data-label="Status">
@@ -309,7 +312,7 @@ function RunsView({ runs, plans, live, info }: { runs: Run[]; plans: Plans; live
                         {r.mode === 'single' && <div className="note">alone</div>}
                       </td>
                       <td data-label="Plan parts done" className="r num" title={partList}>
-                        {r.done} of {r.of}
+                        {r.of === 0 ? 'none' : `${r.done} of ${r.of}`}
                         {r.already > 0 && <div className="note">{r.already} already in the plan</div>}
                       </td>
                       <td data-label="Saw passport data">

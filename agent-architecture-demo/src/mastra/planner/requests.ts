@@ -1,10 +1,11 @@
 // The demo requests. The UI keeps the same texts in ui-planner/src/requests.ts.
 // rooms and travelUs are the two short stage requests; conference and travel are the big ones (under "More requests").
 // Each request names the domains it needs (the triage may only ask those) and the peer it enters at in the decentralized setup.
+// "open" is whatever a person types into the chat: no fixed brief, every domain, and in the decentralized setup a router picks the entry peer.
 import type { Domain } from './tools';
 
-export type RequestKind = 'rooms' | 'travelUs' | 'conference' | 'travel';
-export const REQUEST_KINDS: RequestKind[] = ['rooms', 'travelUs', 'conference', 'travel'];
+export type RequestKind = 'rooms' | 'travelUs' | 'conference' | 'travel' | 'open';
+export const REQUEST_KINDS: RequestKind[] = ['rooms', 'travelUs', 'conference', 'travel', 'open'];
 
 export const REQUESTS: Record<RequestKind, { title: string; text: string; domains: Domain[]; entry: Domain }> = {
   rooms: {
@@ -29,6 +30,13 @@ export const REQUESTS: Record<RequestKind, { title: string; text: string; domain
     title: 'Book speaker travel',
     text: 'Book travel for the 14 international speakers of VibeKode 2027. Check every passport and visa, get flight and hotel quotes from the airline and hotel systems and book them, put all 30 talks into the schedule, and check the travel cost against the budget.',
     domains: ['travel', 'program', 'budget'],
+    entry: 'program',
+  },
+  // the text is the person's own (Run.text in the plan store); the entry is the router's pick (Run.entry), program only as a fallback
+  open: {
+    title: 'Own request',
+    text: '',
+    domains: ['program', 'venue', 'catering', 'travel', 'budget', 'marketing', 'access'],
     entry: 'program',
   },
 };

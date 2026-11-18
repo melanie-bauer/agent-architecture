@@ -55,7 +55,8 @@ export type Plan = {
   mode: Mode;
   /** the request of the current (or last) run in this setup */
   request: RequestKind;
-  run: { id: number; request: RequestKind; at: number } | null;
+  /** text: the person's words (open request); entry: the router's pick (decentralized) */
+  run: { id: number; request: RequestKind; at: number; text?: string; entry?: string } | null;
   slots: Record<string, SlotEntry>;
   rooms: Record<string, RoomEntry>;
   access: Record<string, AccessEntry>;

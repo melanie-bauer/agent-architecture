@@ -39,13 +39,14 @@ export function emit(e: VizEvent) {
 export function nodeOf(agentId: string): string | null {
   if (agentId === 'planner-single') return 'single';
   if (agentId === 'planner-triage') return 'triage';
+  if (agentId === 'planner-router') return 'router';
   const m = agentId.match(/^(?:spec|peer)-(.+)$/);
   return m ? m[1] : null;
 }
 
-/** Which mode an agent belongs to: planner-single, planner-triage and spec-* (centralized), peer-* (decentralized). */
+/** Which mode an agent belongs to: planner-single, planner-triage and spec-* (centralized), peer-* and the router (decentralized). */
 export function modeOf(agentId: string): PlanMode {
   if (agentId.startsWith('spec-') || agentId === 'planner-triage') return 'centralized';
-  if (agentId.startsWith('peer-')) return 'decentralized';
+  if (agentId.startsWith('peer-') || agentId === 'planner-router') return 'decentralized';
   return 'single';
 }

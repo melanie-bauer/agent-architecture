@@ -4,8 +4,9 @@ export type Mode = 'single' | 'centralized' | 'decentralized';
 export const MODES: Mode[] = ['single', 'centralized', 'decentralized'];
 export const DOMAINS = ['program', 'venue', 'access', 'catering', 'budget', 'marketing', 'travel'] as const;
 export type Domain = (typeof DOMAINS)[number];
-export type RequestKind = 'rooms' | 'travelUs' | 'conference' | 'travel';
-export const REQUEST_KINDS: RequestKind[] = ['rooms', 'travelUs', 'conference', 'travel'];
+/** open: what a person typed into the chat (no fixed brief; decentralized: a router picks the entry peer) */
+export type RequestKind = 'rooms' | 'travelUs' | 'conference' | 'travel' | 'open';
+export const REQUEST_KINDS: RequestKind[] = ['rooms', 'travelUs', 'conference', 'travel', 'open'];
 
 export const LABEL: Record<string, string> = {
   program: 'Program',
@@ -16,6 +17,7 @@ export const LABEL: Record<string, string> = {
   marketing: 'Marketing',
   travel: 'Travel',
   triage: 'Triage',
+  router: 'Router',
   single: 'Planner',
   board: 'Plan board',
   person: 'A person',
@@ -216,7 +218,8 @@ export function reduce(prev: NetState, e: VizEvent, mode: Mode): NetState {
       ed.live++;
       ed.count++;
       ed.lastAt = e.t;
-      s.messages++;
+      // the router hands the request on: no conversation between agents, so it does not count as an agent message
+      if (e.from !== 'router') s.messages++;
       s.pending++;
       touch(e.from!);
       addEntry(e.from!, { id: e.id!, kind: 'message', agent: e.from!, to: e.to, via: kind, t: e.t, text: e.text, pending: true });

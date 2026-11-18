@@ -338,7 +338,8 @@ export function Catering({ base, plan }: { base: Base; plan: Plan }) {
 
 // ---------------- Travel ----------------
 export function Travel({ base, plan, mode }: { base: Base; plan: Plan; mode: Mode }) {
-  return plan.request === 'travel' || plan.request === 'travelUs' ? <TravelBookings base={base} plan={plan} mode={mode} /> : <TravelListPrices base={base} plan={plan} />;
+  const bookings = plan.request === 'travel' || plan.request === 'travelUs' || plan.approvals.length > 0 || Object.keys(plan.flights).length > 0;
+  return bookings ? <TravelBookings base={base} plan={plan} mode={mode} /> : <TravelListPrices base={base} plan={plan} />;
 }
 
 /** First request: flight and hotel at list prices. */

@@ -19,7 +19,7 @@ const { mastra } = await import('../src/mastra/index');
 const { recorder } = await import('../src/mastra/model/recorder');
 const { TOOL_TIERS } = await import('../src/mastra/incident-desk/tools/index');
 const { delegationPolicy, MAX_DELEGATIONS } = await import('../src/mastra/incident-desk/agents/delegation');
-const { evidenceGrounded } = await import('../src/mastra/incident-desk/scorers');
+const { evidenceGrounded, rootCauseFound, customerDataKept } = await import('../src/mastra/incident-desk/scorers');
 const { tickets } = await import('../src/mastra/incident-desk/data/incident-data');
 const { allowedRollbackTargets } = await import('../src/mastra/incident-desk/workflows/incident-triage');
 
@@ -126,6 +126,30 @@ describe('Workflow routing', () => {
     const proposal = r.suspendPayload['incident-path'];
     const score = await evidenceGrounded.run({ input: [], output: proposal });
     assert.equal(score.score, 1, 'every cited evidence id must exist');
+  });
+});
+
+describe('Behaviour scorers (sampled on live runs, shown in Studio)', () => {
+  test('both supervisors score every run', async () => {
+    const inv = await mastra.getAgent('incidentInvestigator').listScorers();
+    const cmd = await mastra.getAgent('incidentCommander').listScorers();
+    assert.deepEqual((inv as any).rootCauseFound?.sampling, { type: 'ratio', rate: 1 });
+    assert.deepEqual((cmd as any).customerDataKept?.sampling, { type: 'ratio', rate: 1 });
+    assert.deepEqual((cmd as any).answerJudged?.sampling, { type: 'none' }, 'the LLM judge is off in mock mode: a scripted model cannot judge');
+  });
+
+  test('root-cause-found: full, half and no credit', async () => {
+    const score = async (text: string) => (await rootCauseFound.run({ input: [], output: text } as any)).score;
+    assert.equal(await score('Deploy v2.41.0 lowered maxConnections from 64 to 4, so the payment pool is exhausted.'), 1);
+    assert.equal(await score('It started after deploy v2.41.0.'), 0.5);
+    assert.equal(await score('Probably the payment provider.'), 0);
+  });
+
+  test('customer-data-kept: an answer that repeats customer data scores 0', async () => {
+    const score = async (text: string) => (await customerDataKept.run({ input: [], output: text } as any)).score;
+    assert.equal(await score('The customer [name] reported 502s; roll back checkout to v2.40.3.'), 1);
+    assert.equal(await score('Jana Novak (jana.novak@example.com) reported it.'), 0);
+    assert.equal(await score('The payment with card ending 4242 failed.'), 0);
   });
 });
 
@@ -634,6 +658,39 @@ describe('Planner network (topology)', async () => {
       const iDrop = mine.findIndex((c) => c.key === 'Room C' && c.summary.includes('dropped'));
       assert.ok(iCheck >= 0 && iCheck < iDrop, `run ${k + 1}: budget checked before venue dropped Room C`);
       assert.ok(p.complete.all, JSON.stringify(p.parts));
+    }
+  });
+
+  // ---------- open requests: whatever a person types into the chat ----------
+  test('open request: the router picks the entry peer, the triage gets every specialist, no fixed parts, a question writes nothing', async () => {
+    const { routeRequest } = await import('../src/mastra/planner/agents');
+    emit({ type: 'reset', scope: 'all' });
+    const events: any[] = [];
+    const on = (e: any) => events.push(e);
+    bus.on('event', on);
+    assert.equal(await routeRequest('Choose a caterer with vegan options'), 'catering');
+    assert.equal(await routeRequest('How much buffer is left in the budget?'), 'budget');
+    bus.off('event', on);
+    const routerCalls = events.filter((e) => e.type === 'agent-start' && e.agent === 'router');
+    assert.equal(routerCalls.length, 2, 'the router is one model call per request, drawn as its own node');
+    assert.ok(routerCalls.every((e) => e.mode === 'decentralized'));
+
+    store.startRun('centralized', 'open', 'Choose a caterer');
+    assert.deepEqual(Object.keys(await plannerTriage.listAgents()).sort(), [...REQUESTS.conference.domains].sort(), 'an open request: the hub holds every specialist');
+    store.startRun('decentralized', 'open', 'Choose a caterer');
+    assert.equal(plannerEntryPeer.id, 'peer-program', 'before routing: the fallback');
+    store.setRunEntry('decentralized', 'catering');
+    assert.equal(plannerEntryPeer.id, 'peer-catering', 'after routing: the pick of the router');
+
+    for (const [mode, agent] of MODES) {
+      store.startRun(mode, 'open', 'What is the buffer left in the budget?');
+      const before = store.getPlan(mode).changes.length;
+      const r = await (agent as any).generate('What is the buffer left in the budget?', { maxSteps: 10 });
+      const p = store.getPlan(mode);
+      assert.equal(p.changes.length, before, `${mode}: a question writes nothing (mock)`);
+      assert.deepEqual(p.parts, {}, `${mode}: an open request has no fixed parts`);
+      assert.ok(p.complete.all);
+      assert.match(String(r.text), /buffer €[\d,]+/, `${mode}: the mock answers with where the plan stands`);
     }
   });
 });

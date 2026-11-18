@@ -7,7 +7,7 @@
 // Bookings only create a pending approval; after a decline the next proposal has 2 hotel nights instead of 3.
 import type { MockAction, MockCtx, MockScript } from '../model/mock-model';
 import { shortlist, TALKS_PER_TRACK, travellingSpeakers } from './data';
-import { currentQuestion, currentRequest, planSummary } from './plan-store';
+import { currentRequest, currentText, planSummary } from './plan-store';
 import { modeOf } from './viz';
 
 type Step = MockAction | ((ctx: MockCtx) => MockAction);
@@ -580,17 +580,32 @@ const bigRequests: Record<string, MockScript> = {
         )(ctx),
 };
 
+// The router (decentralized, open requests): the live model picks the entry peer, the mock picks it by keyword.
+const ROUTE_WORDS: [string, RegExp][] = [
+  ['travel', /travel|flight|hotel|passport|visa|speaker/i],
+  ['catering', /cater|food|menu|lunch|coffee|vegan|diet/i],
+  ['access', /access|step-free|wheelchair|caption|hearing/i],
+  ['budget', /budget|cost|buffer|money|price|€/i],
+  ['marketing', /ticket|sponsor|marketing/i],
+  ['venue', /room|hall|venue|seat/i],
+  ['program', /talk|schedule|program|track|keynote|cfp/i],
+];
+const routerScript: MockScript = (ctx) => ({ text: ROUTE_WORDS.find(([, re]) => re.test(ctx.lastUserText))?.[0] ?? 'program' });
+
 /** The stage requests first (by the request the agent's setup works on), the big requests otherwise. */
-export const plannerMockScripts: Record<string, MockScript> = Object.fromEntries(
-  Object.entries(bigRequests).map(([id, big]) => [
-    id,
-    (ctx: MockCtx) => {
-      // a typed follow-up question: the agent the person talks to answers from the plan, no tools (a live model would look things up)
-      const question = currentQuestion(modeOf(id));
-      if (question && ctx.lastUserText.includes(question)) return { text: `Mock mode has no answers for free questions. Where the plan stands: ${planSummary(modeOf(id))}` };
-      const kind = currentRequest(modeOf(id));
-      const stage = kind === 'rooms' || kind === 'travelUs' ? STAGE[id]?.[kind] : undefined;
-      return (stage ?? big)(ctx);
-    },
-  ]),
-);
+export const plannerMockScripts: Record<string, MockScript> = {
+  ...Object.fromEntries(
+    Object.entries(bigRequests).map(([id, big]) => [
+      id,
+      (ctx: MockCtx) => {
+        const kind = currentRequest(modeOf(id));
+        // an open request (typed into the chat): no script can know what was meant. The agent the person talks to
+        // answers with where the plan stands, without tools; a live model does what the text asks.
+        if (kind === 'open') return { text: `Mock mode only plays the scripted requests, not "${(currentText(modeOf(id)) ?? '').slice(0, 80)}". Where the plan stands: ${planSummary(modeOf(id))}` };
+        const stage = kind === 'rooms' || kind === 'travelUs' ? STAGE[id]?.[kind] : undefined;
+        return (stage ?? big)(ctx);
+      },
+    ]),
+  ),
+  'planner-router': routerScript,
+};

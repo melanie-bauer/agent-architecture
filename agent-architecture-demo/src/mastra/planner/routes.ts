@@ -2,8 +2,8 @@
 //   /copilotkit          CopilotKit runtime (AG-UI) – agents "single" | "centralized" | "decentralized"
 //   /planner             the React UI (ui-planner/dist)
 //   /planner/events      SSE stream of the visualisation bus
-//   /planner/run         POST {mode, request, question?}: a new request starts in one setup (request: rooms | travelUs | conference | travel);
-//                        with question: a typed follow-up to that request (no new request, the agents answer it).
+//   /planner/run         POST {mode, request, text?}: a new request starts in one setup (request: rooms | travelUs | conference | travel | open).
+//                        open: text is what the person typed; in the decentralized setup the router picks the entry peer before this returns.
 //                        Clears nothing in the plan (plans accumulate); a new run id, the peers' board and message budget start fresh
 //   /planner/reset       POST {scope}: scope "all" (default) clears every plan, the board and the network budgets (the Reset button);
 //                        "run" is the same as /planner/run (kept for older clients); "network" changes nothing on the server
@@ -16,13 +16,13 @@ import { registerCopilotKit } from '@ag-ui/mastra/copilotkit';
 import { registerApiRoute } from '@mastra/core/server';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { plannerEntryPeer, plannerSingle, plannerTriage } from './agents';
+import { plannerEntryPeer, plannerSingle, plannerTriage, routeRequest } from './agents';
 import { transport } from './peers';
 import { MODEL_IDS, plannerMode, plannerReasoningEffort } from '../model/models';
-import { bus, emit } from './viz';
+import { bus, emit, vizId } from './viz';
 import * as data from './data';
 import { HOTEL_OFFERS, SYSTEM_LATENCY_MS, SYSTEMS } from './external';
-import { approve, decline, getPlan, PLAN_MODES, resetPlan, startRun, type PlanMode } from './plan-store';
+import { approve, decline, getPlan, PLAN_MODES, resetPlan, setRunEntry, startRun, type PlanMode } from './plan-store';
 import { declineMessage, REQUEST_KINDS, type RequestKind } from './requests';
 
 const BASE_DATA: Record<string, () => unknown> = {
@@ -75,9 +75,19 @@ export function plannerRoutes(root: string) {
       handler: async (c) => {
         const body = await c.req.json().catch(() => ({}));
         if (!PLAN_MODES.includes(body?.mode)) return c.json({ error: `mode must be one of ${PLAN_MODES.join(', ')}` }, 400);
-        const request: RequestKind = REQUEST_KINDS.includes(body?.request) ? body.request : 'conference';
-        const question = typeof body?.question === 'string' && body.question.trim() ? body.question.trim().slice(0, 1000) : undefined;
-        return c.json({ ok: true, run: startRun(body.mode as PlanMode, request, question) });
+        const text = typeof body?.text === 'string' && body.text.trim() ? body.text.trim().slice(0, 2000) : undefined;
+        const request: RequestKind = REQUEST_KINDS.includes(body?.request) && (body.request !== 'open' || text) ? body.request : 'conference';
+        const mode = body.mode as PlanMode;
+        const run = startRun(mode, request, request === 'open' ? text : undefined);
+        // peer to peer has no hub: someone has to decide where an open request enters. One small model call, drawn on the map.
+        if (mode === 'decentralized' && request === 'open' && text) {
+          const id = vizId();
+          const entry = await routeRequest(text).catch(() => 'program' as const);
+          setRunEntry(mode, entry);
+          emit({ type: 'message', mode, from: 'router', to: entry, text, via: 'local', id });
+          emit({ type: 'reply', mode, from: entry, to: 'router', text: `The request enters at ${entry}.`, id, ms: 0 });
+        }
+        return c.json({ ok: true, run });
       },
     }),
     registerApiRoute('/planner/reset', {

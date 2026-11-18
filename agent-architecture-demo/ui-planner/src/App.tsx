@@ -7,7 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { fetchPlans, progress, useBase, type Plan, type Plans } from './api';
 import { emptyNet, emptyNets, isIdle, MODES, reduceAll, type Mode, type NetState, type RequestKind, type VizEvent } from './network';
 import { ApprovalCard, runApproval } from './approval';
-import { ENTRY, kindOf, REQUESTS } from './requests';
+import { kindOf, REQUESTS } from './requests';
 import { NetworkScreen, type Run, type RunStatus } from './screens/NetworkScreen';
 import { Overview } from './screens/Overview';
 import { Budget, Catering, Program, Rooms, Speakers, Travel } from './screens/DataScreens';
@@ -34,7 +34,7 @@ const post = (url: string, body: object) => fetch(url, { method: 'POST', headers
 
 type ChatHandle = { send: (text: string) => Promise<void>; answer: () => string };
 /** A request that was sent and has not finished yet: its numbers land in Compare runs when it ends. */
-type Armed = { kind: RequestKind; at: number; sawLoading: boolean; loadEnd?: number; failed?: string };
+type Armed = { kind: RequestKind; text?: string; at: number; sawLoading: boolean; loadEnd?: number; failed?: string };
 const LIMIT = /(Message budget|Max conversation depth)[^"\\]*/i;
 
 /** What one finished run did, from the map state, the plan and the chat. */
@@ -45,11 +45,13 @@ function finishRun(m: Mode, a: Armed, n: NetState, p: Plan | undefined, answer: 
   const pr = p ? progress(p) : { done: 0, already: 0, of: 0, parts: {} };
   const end = Math.max(n.lastAt ?? 0, a.loadEnd ?? 0);
   const seconds = n.startedAt && n.lastAt ? (n.lastAt - n.startedAt) / 1000 : (end - a.at) / 1000;
-  const status: RunStatus = a.failed || (!answer && n.llmCalls === 0) ? 'failed' : limit ? 'limit' : writes === 0 ? 'no-writes' : 'completed';
+  // an open request may be a question: answering without writing is a normal end there
+  const status: RunStatus = a.failed || (!answer && n.llmCalls === 0) ? 'failed' : limit ? 'limit' : writes === 0 && a.kind !== 'open' ? 'no-writes' : 'completed';
   return {
     id: `${m}-${a.at}`,
     mode: m,
     request: a.kind,
+    text: a.text,
     seconds: Math.max(0, seconds),
     llm: n.llmCalls,
     tools: n.tools,
@@ -199,20 +201,22 @@ export function App() {
     post('/planner/reset', { scope: 'all' });
   };
   // a new request starts a run: the map and counters of this setup start fresh, the plan is kept (only Reset clears it)
-  const beforeRun = useCallback(async (kind: RequestKind, question?: string) => {
+  // open: text is what the person typed; in the decentralized setup the server routes it before this returns
+  const beforeRun = useCallback(async (kind: RequestKind, text?: string) => {
     const m = modeRef.current;
-    armed.current[m] = { kind, at: Date.now(), sawLoading: false };
+    armed.current[m] = { kind, text, at: Date.now(), sawLoading: false };
     setNets((s) => ({ ...s, [m]: emptyNet(kind) }));
-    await post('/planner/run', { mode: m, request: kind, ...(question ? { question } : {}) });
+    await post('/planner/run', { mode: m, request: kind, ...(text ? { text } : {}) });
   }, []);
 
-  // typed text: a recognised request starts that request; anything else is a follow-up to the current request
-  // (same checklist and agents, the plan stays), never the full conference run; a declined-booking follow-up starts no run
+  // typed text: the exact text of a button starts that request, anything else is an open request in the person's words;
+  // a declined-booking follow-up starts no run here (the approval card already started it)
   const beforeTyped = useCallback(
     (text: string) => {
-      if (/^the booking was declined/i.test(text.trim())) return undefined;
-      const kind = kindOf(text);
-      return kind ? beforeRun(kind) : beforeRun(plansRef.current?.[modeRef.current]?.request ?? 'rooms', text.trim());
+      const t = text.trim();
+      if (/^the booking was declined/i.test(t)) return undefined;
+      const kind = kindOf(t);
+      return beforeRun(kind, kind === 'open' ? t : undefined);
     },
     [beforeRun],
   );
@@ -231,7 +235,8 @@ export function App() {
       // after a declined booking: a new run of the same request in the same setup (the declined card stays in the plan)
       followUp: async (text: string) => {
         const m = modeRef.current;
-        await beforeRun(plansRef.current?.[m]?.request ?? 'travelUs');
+        const kind = plansRef.current?.[m]?.request ?? 'travelUs';
+        await beforeRun(kind, kind === 'open' ? text : undefined);
         await chats.current[m]?.send(text);
       },
     }),
@@ -452,10 +457,13 @@ function ModeProgress({ plans, mode }: { plans: Plans | null; mode: Mode }) {
       {MODES.map((m) => {
         const p = plans[m];
         const pr = progress(p);
+        // an open request has no parts of its own: count the plan as a whole
+        const whole = Object.entries(p.inPlan).filter(([k]) => k !== 'all');
+        const of = p.request === 'open' ? `${whole.filter(([, v]) => v).length} of ${whole.length}` : `${pr.done + pr.already} of ${pr.of}`;
         return (
           <li key={m} className={m === mode ? 'on' : ''}>
             <span>{MODE_NAME[m]}</span>
-            <span className="num">{p.changes.length === 0 ? 'empty' : p.inPlan.all ? 'complete' : `${pr.done + pr.already} of ${pr.of}`}</span>
+            <span className="num">{p.changes.length === 0 ? 'empty' : p.inPlan.all ? 'complete' : of}</span>
           </li>
         );
       })}

@@ -23,25 +23,28 @@ export const REQUESTS: Record<RequestKind, { title: string; text: string; short:
     short: 'All 14 speakers: passports, airline and hotel systems, schedule and budget.',
     text: 'Book travel for the 14 international speakers of VibeKode 2027. Check every passport and visa, get flight and hotel quotes from the airline and hotel systems and book them, put all 30 talks into the schedule, and check the travel cost against the budget.',
   },
+  // typed into the chat: the text is the person's own (plan.run.text)
+  open: {
+    title: 'Own request',
+    short: 'Typed into the chat: no fixed brief, the agents decide what it needs.',
+    text: '',
+  },
 };
 export const MAIN_REQUESTS: RequestKind[] = ['rooms', 'travelUs'];
 export const MORE_REQUESTS: RequestKind[] = ['conference', 'travel'];
 
-/** A request typed into the chat: the exact text of a known request, otherwise a guess from its words.
- *  null: no request recognised (a question, a correction): the chat treats it as a follow-up to the current request. */
-export function kindOf(text: string): RequestKind | null {
+/** A message in the chat: the exact text of a known request (buttons, suggestions), otherwise an open request in the person's words. */
+export function kindOf(text: string): RequestKind {
   const t = text.trim();
-  const exact = (Object.keys(REQUESTS) as RequestKind[]).find((k) => REQUESTS[k].text === t);
-  if (exact) return exact;
-  if (/\bUS\b|four speakers/i.test(t)) return 'travelUs';
-  if (/passport|visa|flight|hotel/i.test(t)) return 'travel';
-  if (/room/i.test(t) && !/catering|schedule/i.test(t)) return 'rooms';
-  if (/plan (the|a|our) conference|whole conference|catering/i.test(t)) return 'conference';
-  return null;
+  return (Object.keys(REQUESTS) as RequestKind[]).find((k) => k !== 'open' && REQUESTS[k].text === t) ?? 'open';
 }
 
-/** Where a request enters the peer network (decentralized): rooms at Venue, travelUs at Travel, the big ones at Program. */
-export const ENTRY: Record<RequestKind, 'venue' | 'travel' | 'program'> = { rooms: 'venue', travelUs: 'travel', conference: 'program', travel: 'program' };
+/** The request as a title: its name, or the person's words for an open request. */
+export const requestTitle = (kind: RequestKind, text?: string) => (kind === 'open' && text ? `“${text.length > 60 ? `${text.slice(0, 57)}…` : text}”` : REQUESTS[kind].title);
+
+/** Where a request enters the peer network (decentralized): rooms at Venue, travelUs at Travel, the big ones at Program. An open request: where the router sent it (plan.run.entry). */
+export const ENTRY: Record<Exclude<RequestKind, 'open'>, 'venue' | 'travel' | 'program'> = { rooms: 'venue', travelUs: 'travel', conference: 'program', travel: 'program' };
+export const entryOf = (kind: RequestKind, routed?: string): string | undefined => (kind === 'open' ? routed : ENTRY[kind]);
 
 /** The domains a request needs (same as the server's requests.ts): the triage asks only these. */
 export const REQUEST_DOMAINS: Record<RequestKind, string[]> = {
@@ -49,4 +52,5 @@ export const REQUEST_DOMAINS: Record<RequestKind, string[]> = {
   travelUs: ['travel', 'budget'],
   conference: ['program', 'venue', 'catering', 'travel', 'budget', 'marketing', 'access'],
   travel: ['travel', 'program', 'budget'],
+  open: ['program', 'venue', 'catering', 'travel', 'budget', 'marketing', 'access'],
 };

@@ -2,7 +2,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { clock, type Meta } from './api';
 import { LABEL, type Mode, type RequestKind } from './network';
-import { ENTRY, MAIN_REQUESTS, MORE_REQUESTS, REQUEST_DOMAINS, REQUESTS } from './requests';
+import { entryOf, MAIN_REQUESTS, MORE_REQUESTS, REQUEST_DOMAINS, REQUESTS } from './requests';
 
 /** Button labels in the top bar. */
 export const MODE_NAME: Record<Mode, string> = { single: 'Single agent', centralized: 'Centralized', decentralized: 'Decentralized' };
@@ -16,12 +16,17 @@ export const MODE_HINT: Record<Mode, string> = {
 export const DOMAIN_NAME: Record<string, string> = { ...LABEL, access: 'Accessibility' };
 
 /** The hint for a setup, naming who works on the current request (without a request: the general hint). */
-export function modeHint(mode: Mode, request?: RequestKind | null) {
+export function modeHint(mode: Mode, request?: RequestKind | null, routed?: string) {
   if (!request) return mode === 'centralized' ? 'Triage delegates to specialists over A2A.' : MODE_HINT[mode];
+  if (request === 'open') {
+    if (mode === 'centralized') return 'Triage decides which specialists to ask over A2A.';
+    if (mode === 'decentralized') return routed ? `A router sent the request to ${DOMAIN_NAME[routed] ?? routed}, and the peers ask each other over A2A.` : 'A router picks the peer the request enters at, and the peers ask each other over A2A.';
+    return MODE_HINT.single;
+  }
   const names = REQUEST_DOMAINS[request].map((d) => DOMAIN_NAME[d] ?? d);
   const list = names.length > 3 ? `${names.length} specialists` : names.length === 3 ? `${names[0]}, ${names[1]} and ${names[2]}` : names.join(' and ');
   if (mode === 'centralized') return `Triage asks ${list} over A2A.`;
-  if (mode === 'decentralized') return `The request enters at ${DOMAIN_NAME[ENTRY[request]]}, and the peers ask each other over A2A.`;
+  if (mode === 'decentralized') return `The request enters at ${DOMAIN_NAME[entryOf(request)!]}, and the peers ask each other over A2A.`;
   return MODE_HINT.single;
 }
 

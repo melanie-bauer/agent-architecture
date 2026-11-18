@@ -28,7 +28,7 @@ export function sentence(e: Entry): string {
   const done = !e.pending;
   switch (e.kind) {
     case 'message':
-      return `${a} asked ${who(e.to)}`;
+      return e.agent === 'router' ? `${a} sent the request to ${who(e.to)}` : `${a} asked ${who(e.to)}`;
     case 'board':
       return `${a} posted ${args.section ? `“${args.section}” ` : ''}to the plan board`;
   }
@@ -128,7 +128,7 @@ export function sentence(e: Entry): string {
 
 /** The answer line under a message. */
 export function replyLine(e: Entry) {
-  if (e.kind !== 'message') return '';
+  if (e.kind !== 'message' || e.agent === 'router') return '';
   if (e.pending) return `Waiting for ${who(e.to)}`;
   return `${who(e.to)} answered${e.ms ? ` after ${(e.ms / 1000).toFixed(1)} s` : ''}`;
 }

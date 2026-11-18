@@ -1,7 +1,7 @@
 import { eur, type Base, type Plan } from '../api';
 import type { Mode } from '../network';
 import { AccessStatus, Attribution, BudgetBar, ChangeFeed, PassportPanel, roomUses, ScheduleGrid, StaleNote } from '../plan-parts';
-import { MAIN_REQUESTS, REQUESTS } from '../requests';
+import { MAIN_REQUESTS, REQUESTS, requestTitle } from '../requests';
 import { freshClass, MODE_TITLE, Panel, RequestButtons, ScreenHead, useRun, Who } from '../ui';
 
 type Check = { key: string; name: string; screen: string };
@@ -50,7 +50,7 @@ export function Overview({ base, plan, mode, go }: { base: Base; plan: Plan; mod
   return (
     <div className="screen">
       <ScreenHead title="Plan overview" actions={<RequestButtons first={plan.request} />}>
-        {MODE_TITLE[mode]} plan for {base.event.attendees} attendees, {base.event.days} days, 3 tracks. {empty ? 'Every entry will show which agent wrote it.' : `Request: ${REQUESTS[plan.request].title}. Every entry shows which agent wrote it.`}
+        {MODE_TITLE[mode]} plan for {base.event.attendees} attendees, {base.event.days} days, 3 tracks. {empty ? 'Every entry will show which agent wrote it.' : `Request: ${requestTitle(plan.request, plan.run?.text)}. Every entry shows which agent wrote it.`}
       </ScreenHead>
 
       {!empty && (

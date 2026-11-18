@@ -66,8 +66,8 @@ export type Approval = {
 };
 export type Change = { mode: PlanMode; kind: string; key: string; by: string; domain: string; at: number; summary: string; action: 'added' | 'changed' | 'removed' };
 
-/** question: a typed follow-up that is not a new request (the run keeps the request, the agents answer the question). */
-export type Run = { id: number; request: RequestKind; at: number; question?: string };
+/** text: the person's own words (an open request); entry: the peer the router picked (decentralized, open request). */
+export type Run = { id: number; request: RequestKind; at: number; text?: string; entry?: string };
 export type Plan = {
   /** the request of the current (or last) run */
   request: RequestKind;
@@ -129,8 +129,8 @@ g.__plannerRunSeq ??= 0;
  * What starts fresh: the run id (what this run writes counts as done), the request the agents work on,
  * and who saw passport data (a measurement of this run). The peers' board and message budget start fresh too (peers.ts, on the "run" event).
  */
-export function startRun(mode: PlanMode, request: RequestKind, question?: string) {
-  const run: Run = { id: ++g.__plannerRunSeq, request, at: Date.now(), ...(question ? { question } : {}) };
+export function startRun(mode: PlanMode, request: RequestKind, text?: string) {
+  const run: Run = { id: ++g.__plannerRunSeq, request, at: Date.now(), ...(text ? { text } : {}) };
   plans[mode].request = request;
   plans[mode].run = run;
   resetPassportSeen(mode);
@@ -296,8 +296,16 @@ export function chooseCaterer(w: Writer, caterer: string, headcount: number) {
 // ---------------- travel ----------------
 /** The request a mode is working on (set by startRun, /planner/run). */
 export const currentRequest = (mode: PlanMode): RequestKind => plans[mode].request;
-/** The typed follow-up question of the current run, if it is one. */
-export const currentQuestion = (mode: PlanMode): string | undefined => plans[mode].run?.question;
+/** The person's own words, when the current run is an open request. */
+export const currentText = (mode: PlanMode): string | undefined => (plans[mode].request === 'open' ? plans[mode].run?.text : undefined);
+/** The peer the router picked for the current run (decentralized, open request). */
+export const currentEntry = (mode: PlanMode): string | undefined => plans[mode].run?.entry;
+export function setRunEntry(mode: PlanMode, entry: string) {
+  const run = plans[mode].run;
+  if (!run) return;
+  run.entry = entry;
+  emit({ type: 'plan', mode });
+}
 
 /** A short state of the plan in words (the mock's answer to a follow-up question). */
 export function planSummary(mode: PlanMode): string {
@@ -476,6 +484,8 @@ export type PartState = 'done' | 'already' | 'missing';
  */
 export function partsOf(p: Plan, seenBy: string[] = [], mode: PlanMode = 'single') {
   const inPlan = completeness(p, seenBy, mode);
+  // an open request has no fixed parts: nothing to count for the run, the plan as a whole still shows
+  if (p.request === 'open') return { complete: { all: true }, inPlan, parts: {} as Record<string, PartState> };
   const complete = completeness(runView(p), seenBy, mode);
   const parts = Object.fromEntries(Object.keys(inPlan).filter((k) => k !== 'all').map((k) => [k, ((complete as any)[k] ? 'done' : (inPlan as any)[k] ? 'already' : 'missing') as PartState]));
   return { complete, inPlan, parts };
@@ -505,7 +515,9 @@ export function runView(p: Plan): Plan {
 }
 
 /** What a finished plan has, per request. Used by tests, the measuring script and the UI's checklist. */
-export function completeness(p: Plan, seenBy: string[] = [], mode: PlanMode = 'single') {
+export function completeness(p: Plan, seenBy: string[] = [], mode: PlanMode = 'single'): Record<string, boolean> & { all: boolean } {
+  // an open request: the plan as a whole, measured like the full conference
+  if (p.request === 'open') return completeness({ ...p, request: 'conference' }, seenBy, mode);
   if (p.request === 'rooms') {
     const notStepFree = new Set(Object.values(p.access).filter((a) => !a.stepFree).map((a) => a.room));
     const used = Object.values(p.rooms).filter((r) => !r.dropped && (r.keynote || r.track));
